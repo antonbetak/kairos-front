@@ -9,11 +9,14 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import ThemePicker from '../components/ThemePicker';
+import { login } from '../src/services/authService';
+import { saveSession } from '../src/store/authStore';
 
 interface Props {
   onLogin?: () => void;
@@ -32,12 +35,29 @@ export default function LoginScreen({ onLogin, onRegister, onGoogleLogin }: Prop
   const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async () => {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Error', 'Por favor ingresa tu correo y contraseña');
+      return;
+    }
+
     setLoading(true);
-    // TODO: connect to auth_service via API gateway
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const response = await login(email.trim(), password);
+
+      await saveSession(
+        response.access_token,
+        response.refresh_token,
+        // El token tiene el usuario, pero no lo decodificamos aquí —
+        // lo cargamos desde /auth/me después del login si se necesita
+        { id_usuario: '', nombre: '', email: email.trim() }
+      );
+
       onLogin?.();
-    }, 1200);
+    } catch (error: any) {
+      Alert.alert('Error al iniciar sesión', error.message || 'Credenciales incorrectas');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
