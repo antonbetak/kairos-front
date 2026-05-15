@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,85 +6,66 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
+import { listarTareas, actualizarTarea, eliminarTarea, type Tarea } from '../services/taskService';
+import { getAccessToken } from '../store/authStore';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 
-type TaskStatus = 'pendiente' | 'en_progreso' | 'completada' | 'abandonada';
-type TaskPriority = 'alta' | 'media' | 'baja';
-
-interface Task {
-  id: string;
-  titulo: string;
-  tipo: 'tarea' | 'habito' | 'evento';
-  estado: TaskStatus;
-  prioridad: TaskPriority;
-  fecha_fin?: string;
-}
-
-// ─── Mock data ────────────────────────────────────────────────────────────────
-
-const MOCK_TASKS: Task[] = [
-  { id: '1', titulo: 'Revisar arquitectura de microservicios', tipo: 'tarea', estado: 'en_progreso', prioridad: 'alta', fecha_fin: 'Hoy, 18:00' },
-  { id: '2', titulo: 'Ejercicio matutino — 30 min', tipo: 'habito', estado: 'completada', prioridad: 'media' },
-  { id: '3', titulo: 'Leer documentación de RabbitMQ', tipo: 'tarea', estado: 'pendiente', prioridad: 'media', fecha_fin: 'Mañana' },
-  { id: '4', titulo: 'Daily standup con equipo', tipo: 'evento', estado: 'pendiente', prioridad: 'alta', fecha_fin: 'Hoy, 10:00' },
-  { id: '5', titulo: 'Meditación 10 min', tipo: 'habito', estado: 'pendiente', prioridad: 'baja' },
-  { id: '6', titulo: 'Escribir pruebas del auth_service', tipo: 'tarea', estado: 'pendiente', prioridad: 'alta', fecha_fin: 'Vie, 23:59' },
-];
-
-const tipoIcon: Record<string, string> = {
-  tarea: '⬜',
-  habito: '🔄',
-  evento: '📅',
-};
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function TaskCard({ task, onPress }: { task: Task; onPress: () => void }) {
+function TaskCard({ task, onToggle, onDelete }: {
+  task: Tarea;
+  onToggle: () => void;
+  onDelete: () => void;
+}) {
   const { theme } = useTheme();
 
   const statusConfig = {
-    pendiente:   { label: 'Pendiente',   color: theme.textSecondary, bg: theme.surfaceElevated },
-    en_progreso: { label: 'En progreso', color: theme.primary,       bg: theme.primaryMuted },
-    completada:  { label: 'Completada',  color: theme.success,       bg: theme.successMuted },
-    abandonada:  { label: 'Abandonada',  color: theme.error,         bg: theme.errorMuted },
+    false: { label: 'Pendiente', color: theme.textSecondary, bg: theme.surfaceElevated },
+    true:  { label: 'Completada', color: theme.success, bg: theme.successMuted },
   };
 
-  const prioridadDot: Record<TaskPriority, string> = {
-    alta:  theme.error,
-    media: theme.warning,
-    baja:  theme.success,
-  };
-
-  const status = statusConfig[task.estado];
+  const status = statusConfig[String(task.completada) as 'false' | 'true'];
 
   return (
     <TouchableOpacity
       style={[
         styles.taskCard,
         { backgroundColor: theme.surface, borderColor: theme.border },
-        task.estado === 'completada' && styles.taskCardDone,
+        task.completada && styles.taskCardDone,
       ]}
-      onPress={onPress}
+      onPress={onToggle}
+      onLongPress={() =>
+        Alert.alert('Eliminar tarea', `¿Eliminar "${task.titulo}"?`, [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Eliminar', style: 'destructive', onPress: onDelete },
+        ])
+      }
       activeOpacity={0.75}
     >
       <View style={styles.taskCardLeft}>
-        <View style={[styles.prioDot, { backgroundColor: prioridadDot[task.prioridad] }]} />
-        <Text style={styles.taskIcon}>{tipoIcon[task.tipo]}</Text>
+        <View style={[styles.prioDot, { backgroundColor: task.completada ? theme.success : theme.warning }]} />
+        <Text style={styles.taskIcon}>{task.completada ? '✅' : '⬜'}</Text>
         <View style={styles.taskInfo}>
           <Text style={[
             styles.taskTitle,
             { color: theme.textPrimary },
-            task.estado === 'completada' && { textDecorationLine: 'line-through', color: theme.textTertiary },
+            task.completada && { textDecorationLine: 'line-through', color: theme.textTertiary },
           ]}>
             {task.titulo}
           </Text>
-          {task.fecha_fin && (
-            <Text style={[styles.taskDate, { color: theme.textTertiary }]}>⏰ {task.fecha_fin}</Text>
+          {task.descripcion && (
+            <Text style={[styles.taskDate, { color: theme.textTertiary }]} numberOfLines={1}>
+              {task.descripcion}
+            </Text>
+          )}
+          {task.due_at && (
+            <Text style={[styles.taskDate, { color: theme.textTertiary }]}>
+              ⏰ {new Date(task.due_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+            </Text>
           )}
         </View>
       </View>
@@ -112,29 +93,73 @@ function MetricCard({ label, value, unit, accentColor, bgColor, borderColor }: {
   );
 }
 
-// ─── Main Screen ──────────────────────────────────────────────────────────────
-
 interface Props {
   onAddTask?: () => void;
-  onTaskPress?: (task: Task) => void;
 }
 
-export default function HomeScreen({ onAddTask, onTaskPress }: Props) {
+export default function HomeScreen({ onAddTask }: Props) {
   const { theme } = useTheme();
   const shadows = makeShadows(theme.shadowColor);
   const [filter, setFilter] = useState<'todas' | 'pendiente' | 'completada'>('todas');
+  const [tareas, setTareas] = useState<Tarea[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const today = new Date().toLocaleDateString('es-MX', {
     weekday: 'long', day: 'numeric', month: 'long',
   });
 
-  const completedToday = MOCK_TASKS.filter(t => t.estado === 'completada').length;
-  const totalToday = MOCK_TASKS.length;
-  const progressPct = Math.round((completedToday / totalToday) * 100);
+  const cargarTareas = useCallback(async () => {
+    try {
+      setError(null);
+      const token = await getAccessToken();
+      if (!token) throw new Error('No hay sesión activa');
+      const data = await listarTareas(token);
+      setTareas(data);
+    } catch (err: any) {
+      setError(err.message || 'Error al cargar tareas');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    cargarTareas();
+  }, [cargarTareas]);
+
+  const handleToggle = async (tarea: Tarea) => {
+    try {
+      const token = await getAccessToken();
+      if (!token) return;
+      const actualizada = await actualizarTarea(token, tarea.id_tarea, {
+        completada: !tarea.completada,
+      });
+      setTareas(prev => prev.map(t => t.id_tarea === actualizada.id_tarea ? actualizada : t));
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const token = await getAccessToken();
+      if (!token) return;
+      await eliminarTarea(token, id);
+      setTareas(prev => prev.filter(t => t.id_tarea !== id));
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    }
+  };
+
+  const completadas = tareas.filter(t => t.completada).length;
+  const total = tareas.length;
+  const progressPct = total > 0 ? Math.round((completadas / total) * 100) : 0;
 
   const filtered = filter === 'todas'
-    ? MOCK_TASKS
-    : MOCK_TASKS.filter(t => t.estado === filter);
+    ? tareas
+    : filter === 'completada'
+    ? tareas.filter(t => t.completada)
+    : tareas.filter(t => !t.completada);
 
   const FILTERS: Array<{ key: typeof filter; label: string }> = [
     { key: 'todas',      label: 'Todas' },
@@ -157,8 +182,11 @@ export default function HomeScreen({ onAddTask, onTaskPress }: Props) {
             <Text style={[styles.greeting, { color: theme.textPrimary }]}>Buenos días ☀️</Text>
             <Text style={[styles.dateText, { color: theme.textSecondary }]}>{today}</Text>
           </View>
-          <TouchableOpacity style={[styles.avatar, { backgroundColor: theme.primaryMuted, borderColor: theme.primary }]}>
-            <Text style={[styles.avatarText, { color: theme.primary }]}>A</Text>
+          <TouchableOpacity
+            style={[styles.avatar, { backgroundColor: theme.primaryMuted, borderColor: theme.primary }]}
+            onPress={cargarTareas}
+          >
+            <Text style={[styles.avatarText, { color: theme.primary }]}>↻</Text>
           </TouchableOpacity>
         </View>
 
@@ -177,47 +205,29 @@ export default function HomeScreen({ onAddTask, onTaskPress }: Props) {
         <View style={styles.metricsRow}>
           <MetricCard
             label="Completadas"
-            value={`${completedToday}/${totalToday}`}
+            value={`${completadas}/${total}`}
             accentColor={theme.success}
             bgColor={theme.successMuted}
             borderColor={theme.success + '40'}
           />
           <MetricCard
-            label="Racha activa"
-            value={7}
-            unit="días"
-            accentColor={theme.primary}
+            label="Pendientes"
+            value={total - completadas}
+            accentColor={theme.warning}
             bgColor={theme.primaryMuted}
             borderColor={theme.primary + '40'}
           />
           <MetricCard
-            label="Tiempo hoy"
-            value="3.5"
-            unit="hrs"
+            label="Total"
+            value={total}
             accentColor={theme.secondary}
             bgColor={theme.secondaryMuted}
             borderColor={theme.secondary + '40'}
           />
         </View>
 
-        {/* Agent suggestion */}
-        <TouchableOpacity
-          style={[styles.agentCard, { backgroundColor: theme.surface, borderColor: theme.primary + '40' }]}
-          activeOpacity={0.85}
-        >
-          <View style={[styles.agentIcon, { backgroundColor: theme.primaryMuted }]}>
-            <Text style={[styles.agentIconText, { color: theme.primary }]}>✦</Text>
-          </View>
-          <View style={styles.agentText}>
-            <Text style={[styles.agentTitle, { color: theme.primary }]}>Sugerencia de Kairos</Text>
-            <Text style={[styles.agentBody, { color: theme.textSecondary }]}>
-              Tu productividad es más alta entre 9–11 am. Tienes 2 tareas de alta prioridad sin iniciar.
-            </Text>
-          </View>
-        </TouchableOpacity>
-
         {/* Tasks section */}
-        <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Actividades</Text>
+        <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Tareas</Text>
 
         {/* Filter tabs */}
         <View style={styles.filterRow}>
@@ -242,15 +252,31 @@ export default function HomeScreen({ onAddTask, onTaskPress }: Props) {
         </View>
 
         {/* Task list */}
-        <View style={styles.taskList}>
-          {filtered.map(task => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              onPress={() => onTaskPress?.(task)}
-            />
-          ))}
-        </View>
+        {loading ? (
+          <ActivityIndicator color={theme.primary} style={{ marginTop: spacing.xl }} />
+        ) : error ? (
+          <View style={styles.errorBox}>
+            <Text style={[styles.errorText, { color: theme.error }]}>{error}</Text>
+            <TouchableOpacity onPress={cargarTareas}>
+              <Text style={[styles.retryText, { color: theme.primary }]}>Reintentar</Text>
+            </TouchableOpacity>
+          </View>
+        ) : filtered.length === 0 ? (
+          <Text style={[styles.emptyText, { color: theme.textTertiary }]}>
+            {filter === 'todas' ? 'No tienes tareas aún' : 'Sin tareas en esta categoría'}
+          </Text>
+        ) : (
+          <View style={styles.taskList}>
+            {filtered.map(task => (
+              <TaskCard
+                key={task.id_tarea}
+                task={task}
+                onToggle={() => handleToggle(task)}
+                onDelete={() => handleDelete(task.id_tarea)}
+              />
+            ))}
+          </View>
+        )}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -266,8 +292,6 @@ export default function HomeScreen({ onAddTask, onTaskPress }: Props) {
     </SafeAreaView>
   );
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -300,7 +324,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: {
-    fontSize: typography.base,
+    fontSize: typography.lg,
     fontWeight: typography.bold,
   },
 
@@ -352,33 +376,6 @@ const styles = StyleSheet.create({
     fontSize: typography.xs,
     marginTop: spacing.xs,
     textAlign: 'center',
-  },
-
-  agentCard: {
-    borderRadius: radii.lg,
-    padding: spacing.base,
-    borderWidth: 1,
-    marginBottom: spacing.xl,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-  },
-  agentIcon: {
-    width: 32, height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  agentIconText: { fontSize: 16 },
-  agentText: { flex: 1 },
-  agentTitle: {
-    fontSize: typography.sm,
-    fontWeight: typography.semibold,
-    marginBottom: spacing.xs,
-  },
-  agentBody: {
-    fontSize: typography.sm,
-    lineHeight: 18,
   },
 
   sectionTitle: {
@@ -442,6 +439,25 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: typography.xs,
     fontWeight: typography.semibold,
+  },
+
+  errorBox: {
+    alignItems: 'center',
+    marginTop: spacing.xl,
+    gap: spacing.sm,
+  },
+  errorText: {
+    fontSize: typography.sm,
+    textAlign: 'center',
+  },
+  retryText: {
+    fontSize: typography.sm,
+    fontWeight: typography.semibold,
+  },
+  emptyText: {
+    textAlign: 'center',
+    marginTop: spacing.xl,
+    fontSize: typography.sm,
   },
 
   fab: {
