@@ -7,6 +7,7 @@ import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import ScheduleScreen from './src/screens/ScheduleScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { spacing, typography } from './src/styles/theme';
 
@@ -65,6 +66,7 @@ function AppInner() {
   const { theme } = useTheme();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('home');
 
   if (!isLoggedIn) {
@@ -91,9 +93,21 @@ function AppInner() {
     );
   }
 
+  if (showProfile) {
+    return (
+      <>
+        <StatusBar style="dark" />
+        <ProfileScreen
+          onBack={() => setShowProfile(false)}
+          onLogout={() => { setShowProfile(false); setIsLoggedIn(false); }}
+        />
+      </>
+    );
+  }
+
   const renderScreen = () => {
     switch (activeTab) {
-      case 'home':     return <HomeScreen />;
+      case 'home':     return <HomeScreen onAvatarPress={() => setShowProfile(true)} />;
       case 'schedule': return <ScheduleScreen />;
       case 'stats':    return <PlaceholderScreen title="Métricas" />;
       case 'agent':    return <PlaceholderScreen title="Agente Kairos" />;
