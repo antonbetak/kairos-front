@@ -16,6 +16,7 @@ import { listarTareas, actualizarTarea, eliminarTarea, type Tarea } from '../ser
 import { getAccessToken, getStoredUser } from '../store/authStore';
 import NewTaskModal from '../components/NewTaskModal';
 import { crearTarea } from '../services/taskService';
+import { Ionicons } from '@expo/vector-icons';
 
 function TaskCard({ task, onToggle, onDelete }: {
   task: Tarea;
@@ -91,6 +92,7 @@ export default function HomeScreen({ onAvatarPress }: Props) {
   const [nombre, setNombre] = useState('');
   const [inicial, setInicial] = useState('?');
   const [modalVisible, setModalVisible] = useState(false);
+  const [notificaciones] = useState(0);
 
   const today = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -164,19 +166,41 @@ export default function HomeScreen({ onAvatarPress }: Props) {
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
         {/* Header */}
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.greeting, { color: theme.textPrimary }]}>Hola, {nombre || '…'}</Text>
-            <Text style={[styles.dateText, { color: theme.textSecondary }]}>{today}</Text>
-          </View>
-          <TouchableOpacity
-            style={[styles.avatar, { backgroundColor: theme.primaryMuted, borderColor: theme.primary }]}
-            onPress={onAvatarPress}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.avatarText, { color: theme.primary }]}>{inicial}</Text>
-          </TouchableOpacity>
+<View style={styles.header}>
+  <View style={{ flex: 1 }}>
+    <Text style={[styles.greeting, { color: theme.textPrimary }]}>Hola, {nombre || '…'}</Text>
+    <Text style={[styles.dateText, { color: theme.textSecondary }]}>{today}</Text>
+  </View>
+  <View style={styles.headerButtons}>
+    {/* Notificaciones */}
+    <TouchableOpacity
+      style={[styles.headerBtn, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
+      activeOpacity={0.8}
+    >
+      <Ionicons
+  name={notificaciones > 0 ? 'notifications' : 'notifications-outline'}
+  size={20}
+  color={theme.textSecondary}
+/>
+      {notificaciones > 0 && (
+        <View style={[styles.notifBadge, { backgroundColor: theme.error }]}>
+          <Text style={[styles.notifBadgeText, { color: theme.textInverse }]}>
+            {notificaciones > 9 ? '9+' : notificaciones}
+          </Text>
         </View>
+      )}
+    </TouchableOpacity>
+
+    {/* Avatar */}
+    <TouchableOpacity
+      style={[styles.avatar, { backgroundColor: theme.primaryMuted, borderColor: theme.primary }]}
+      onPress={onAvatarPress}
+      activeOpacity={0.8}
+    >
+      <Text style={[styles.avatarText, { color: theme.primary }]}>{inicial}</Text>
+    </TouchableOpacity>
+  </View>
+</View>
 
         {/* Progress bar */}
         <View style={styles.progressSection}>
@@ -287,6 +311,32 @@ const styles = StyleSheet.create({
   dateText: { fontSize: typography.sm, marginTop: spacing.xs, textTransform: 'capitalize' },
   avatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginLeft: spacing.md },
   avatarText: { fontSize: typography.lg, fontWeight: typography.bold },
+  headerButtons: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: spacing.sm,
+},
+headerBtn: {
+  width: 42, height: 42,
+  borderRadius: 21,
+  borderWidth: 2,
+  alignItems: 'center',
+  justifyContent: 'center',
+},
+headerBtnIcon: { fontSize: 18 },
+notifBadge: {
+  position: 'absolute',
+  top: -2, right: -2,
+  minWidth: 16, height: 16,
+  borderRadius: 8,
+  alignItems: 'center',
+  justifyContent: 'center',
+  paddingHorizontal: 3,
+},
+notifBadgeText: {
+  fontSize: 9,
+  fontWeight: typography.bold,
+},
 
   progressSection: { marginBottom: spacing.xl },
   progressHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.sm },
