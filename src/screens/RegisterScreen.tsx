@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import ThemePicker from '../components/ThemePicker';
+import { Ionicons } from '@expo/vector-icons';
 import { register } from '../services/authService';
 
 interface Props {
@@ -168,7 +169,11 @@ export default function RegisterScreen({ onRegister, onBack }: Props) {
                   secureTextEntry={!showPassword}
                 />
                 <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeButton}>
-                  <Text style={styles.eyeText}>{showPassword ? '🙈' : '👁️'}</Text>
+                  <Ionicons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={20}
+                    color={theme.textSecondary}
+                  />
                 </TouchableOpacity>
               </View>
               {errors.password && (
@@ -191,7 +196,11 @@ export default function RegisterScreen({ onRegister, onBack }: Props) {
                   secureTextEntry={!showConfirm}
                 />
                 <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)} style={styles.eyeButton}>
-                  <Text style={styles.eyeText}>{showConfirm ? '🙈' : '👁️'}</Text>
+                  <Ionicons
+                    name={showConfirm ? 'eye-off-outline' : 'eye-outline'}
+                    size={20}
+                    color={theme.textSecondary}
+                  />
                 </TouchableOpacity>
               </View>
               {errors.confirmPassword && (

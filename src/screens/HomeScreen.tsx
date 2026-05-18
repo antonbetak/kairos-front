@@ -8,12 +8,14 @@ import {
   StatusBar,
   ActivityIndicator,
   Alert,
+  AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import { listarTareas, actualizarTarea, eliminarTarea, crearTarea, type Tarea } from '../services/taskService';
+import { listarNotificaciones } from '../services/notificationsService';
 import { getAccessToken, getStoredUser } from '../store/authStore';
 import NewTaskModal, { NuevaTarea } from '../components/NewTaskModal';
 import NotificationsModal from '../components/NotificationsModal';
@@ -43,7 +45,12 @@ function TaskCard({ task, onToggle, onDelete }: {
     >
       <View style={styles.taskCardLeft}>
         <View style={[styles.prioDot, { backgroundColor: task.completada ? theme.success : theme.warning }]} />
-        <Text style={styles.taskIcon}>{task.completada ? '✅' : '⬜'}</Text>
+        <Ionicons
+          name={task.completada ? 'checkmark-circle' : 'square-outline'}
+          size={18}
+          color={task.completada ? theme.success : theme.textSecondary}
+          style={styles.taskIcon}
+        />
         <View style={styles.taskInfo}>
           <Text style={[styles.taskTitle, { color: theme.textPrimary }, task.completada && { textDecorationLine: 'line-through', color: theme.textTertiary }]}>
             {task.titulo}
@@ -98,7 +105,7 @@ export default function HomeScreen({ onAvatarPress }: Props) {
   const [inicial, setInicial] = useState('?');
   const [modalVisible, setModalVisible] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
-  const [notificaciones] = useState(3); // mock: cambia a 0 para ver sin bolita
+  const [notificaciones, setNotificaciones] = useState(0);
 
   const today = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -130,7 +137,41 @@ export default function HomeScreen({ onAvatarPress }: Props) {
     }
   }, []);
 
-  useEffect(() => { cargarTareas(); }, [cargarTareas]);
+  const cargarNotificacionesSinLeer = useCallback(async () => {
+    try {
+      const token = await getAccessToken();
+      if (!token) return;
+      const data = await listarNotificaciones(token);
+      setNotificaciones(data.filter(n => !n.leida).length);
+    } catch {
+      setNotificaciones(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    cargarTareas();
+    cargarNotificacionesSinLeer();
+  }, [cargarTareas, cargarNotificacionesSinLeer]);
+
+  useEffect(() => {
+    if (showNotifs) {
+      cargarNotificacionesSinLeer();
+    }
+  }, [showNotifs, cargarNotificacionesSinLeer]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextState => {
+      if (nextState === 'active') {
+        cargarNotificacionesSinLeer();
+      }
+    });
+    return () => subscription.remove();
+  }, [cargarNotificacionesSinLeer]);
+
+  useEffect(() => {
+    const intervalId = setInterval(cargarNotificacionesSinLeer, 1000);
+    return () => clearInterval(intervalId);
+  }, [cargarNotificacionesSinLeer]);
 
   const handleToggle = async (tarea: Tarea) => {
     try {
@@ -322,7 +363,10 @@ export default function HomeScreen({ onAvatarPress }: Props) {
 
       <NotificationsModal
         visible={showNotifs}
-        onClose={() => setShowNotifs(false)}
+        onClose={() => {
+          setShowNotifs(false);
+          cargarNotificacionesSinLeer();
+        }}
       />
 
     </SafeAreaView>
