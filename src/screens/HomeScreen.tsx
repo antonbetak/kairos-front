@@ -10,13 +10,14 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
-import { listarTareas, actualizarTarea, eliminarTarea, type Tarea } from '../services/taskService';
+import { listarTareas, actualizarTarea, eliminarTarea, crearTarea, type Tarea } from '../services/taskService';
 import { getAccessToken, getStoredUser } from '../store/authStore';
-import NewTaskModal from '../components/NewTaskModal';
-import { crearTarea } from '../services/taskService';
-import { Ionicons } from '@expo/vector-icons';
+import NewTaskModal, { NuevaTarea } from '../components/NewTaskModal';
+import NotificationsModal from '../components/NotificationsModal';
+
 
 function TaskCard({ task, onToggle, onDelete }: {
   task: Tarea;
@@ -47,7 +48,11 @@ function TaskCard({ task, onToggle, onDelete }: {
           <Text style={[styles.taskTitle, { color: theme.textPrimary }, task.completada && { textDecorationLine: 'line-through', color: theme.textTertiary }]}>
             {task.titulo}
           </Text>
-          {task.descripcion && <Text style={[styles.taskDate, { color: theme.textTertiary }]} numberOfLines={1}>{task.descripcion}</Text>}
+          {task.descripcion && (
+            <Text style={[styles.taskDate, { color: theme.textTertiary }]} numberOfLines={1}>
+              {task.descripcion}
+            </Text>
+          )}
           {task.due_at && (
             <Text style={[styles.taskDate, { color: theme.textTertiary }]}>
               ⏰ {new Date(task.due_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
@@ -63,13 +68,12 @@ function TaskCard({ task, onToggle, onDelete }: {
 }
 
 
-function StatCard({ emoji, value, label, sublabel, accentColor, bgColor, borderColor }: {
-  emoji: string; value: string; label: string; sublabel?: string;
+function StatCard({ value, label, sublabel, accentColor, bgColor, borderColor }: {
+  value: string; label: string; sublabel?: string;
   accentColor: string; bgColor: string; borderColor: string;
 }) {
   return (
     <View style={[styles.statCard, { backgroundColor: bgColor, borderColor }]}>
-      <Text style={styles.statEmoji}>{emoji}</Text>
       <Text style={[styles.statValue, { color: accentColor }]}>{value}</Text>
       <Text style={[styles.statLabel, { color: accentColor }]}>{label}</Text>
       {sublabel && <Text style={[styles.statSublabel, { color: accentColor + '99' }]}>{sublabel}</Text>}
@@ -85,6 +89,7 @@ interface Props {
 export default function HomeScreen({ onAvatarPress }: Props) {
   const { theme } = useTheme();
   const shadows = makeShadows(theme.shadowColor);
+
   const [filter, setFilter] = useState<'todas' | 'pendiente' | 'completada'>('todas');
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,7 +97,8 @@ export default function HomeScreen({ onAvatarPress }: Props) {
   const [nombre, setNombre] = useState('');
   const [inicial, setInicial] = useState('?');
   const [modalVisible, setModalVisible] = useState(false);
-  const [notificaciones] = useState(0);
+  const [showNotifs, setShowNotifs] = useState(false);
+  const [notificaciones] = useState(3); // mock: cambia a 0 para ver sin bolita
 
   const today = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -149,13 +155,19 @@ export default function HomeScreen({ onAvatarPress }: Props) {
   const pendientes = total - completadas;
   const progressPct = total > 0 ? Math.round((completadas / total) * 100) : 0;
   const hoy = new Date().toDateString();
-  const completadasHoy = tareas.filter(t => t.completada && t.updated_at && new Date(t.updated_at).toDateString() === hoy).length;
+  const completadasHoy = tareas.filter(t =>
+    t.completada && t.updated_at && new Date(t.updated_at).toDateString() === hoy
+  ).length;
 
-  const filtered = filter === 'todas' ? tareas : filter === 'completada' ? tareas.filter(t => t.completada) : tareas.filter(t => !t.completada);
+  const filtered = filter === 'todas'
+    ? tareas
+    : filter === 'completada'
+    ? tareas.filter(t => t.completada)
+    : tareas.filter(t => !t.completada);
 
   const FILTERS: Array<{ key: typeof filter; label: string }> = [
-    { key: 'todas', label: 'Todas' },
-    { key: 'pendiente', label: 'Pendientes' },
+    { key: 'todas',      label: 'Todas' },
+    { key: 'pendiente',  label: 'Pendientes' },
     { key: 'completada', label: 'Completadas' },
   ];
 
@@ -166,41 +178,42 @@ export default function HomeScreen({ onAvatarPress }: Props) {
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
         {/* Header */}
-<View style={styles.header}>
-  <View style={{ flex: 1 }}>
-    <Text style={[styles.greeting, { color: theme.textPrimary }]}>Hola, {nombre || '…'}</Text>
-    <Text style={[styles.dateText, { color: theme.textSecondary }]}>{today}</Text>
-  </View>
-  <View style={styles.headerButtons}>
-    {/* Notificaciones */}
-    <TouchableOpacity
-      style={[styles.headerBtn, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
-      activeOpacity={0.8}
-    >
-      <Ionicons
-  name={notificaciones > 0 ? 'notifications' : 'notifications-outline'}
-  size={20}
-  color={theme.textSecondary}
-/>
-      {notificaciones > 0 && (
-        <View style={[styles.notifBadge, { backgroundColor: theme.error }]}>
-          <Text style={[styles.notifBadgeText, { color: theme.textInverse }]}>
-            {notificaciones > 9 ? '9+' : notificaciones}
-          </Text>
-        </View>
-      )}
-    </TouchableOpacity>
+        <View style={styles.header}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.greeting, { color: theme.textPrimary }]}>Hola, {nombre || '…'}</Text>
+            <Text style={[styles.dateText, { color: theme.textSecondary }]}>{today}</Text>
+          </View>
+          <View style={styles.headerButtons}>
+            {/* Notificaciones */}
+            <TouchableOpacity
+              style={[styles.headerBtn, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
+              onPress={() => setShowNotifs(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={notificaciones > 0 ? 'notifications' : 'notifications-outline'}
+                size={20}
+                color={theme.textSecondary}
+              />
+              {notificaciones > 0 && (
+                <View style={[styles.notifBadge, { backgroundColor: theme.error }]}>
+                  <Text style={[styles.notifBadgeText, { color: theme.textInverse }]}>
+                    {notificaciones > 9 ? '9+' : notificaciones}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
 
-    {/* Avatar */}
-    <TouchableOpacity
-      style={[styles.avatar, { backgroundColor: theme.primaryMuted, borderColor: theme.primary }]}
-      onPress={onAvatarPress}
-      activeOpacity={0.8}
-    >
-      <Text style={[styles.avatarText, { color: theme.primary }]}>{inicial}</Text>
-    </TouchableOpacity>
-  </View>
-</View>
+            {/* Avatar */}
+            <TouchableOpacity
+              style={[styles.avatar, { backgroundColor: theme.primaryMuted, borderColor: theme.primary }]}
+              onPress={onAvatarPress}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.avatarText, { color: theme.primary }]}>{inicial}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         {/* Progress bar */}
         <View style={styles.progressSection}>
@@ -213,10 +226,9 @@ export default function HomeScreen({ onAvatarPress }: Props) {
           </View>
         </View>
 
-        {/* Stats llamativas */}
+        {/* Stats */}
         <View style={styles.statsRow}>
           <StatCard
-            emoji=""
             value={`${completadasHoy}`}
             label={completadasHoy === 1 ? 'tarea hoy' : 'tareas hoy'}
             sublabel={completadasHoy > 0 ? '¡sigue así!' : 'empieza el día'}
@@ -225,7 +237,6 @@ export default function HomeScreen({ onAvatarPress }: Props) {
             borderColor={theme.warning + '40'}
           />
           <StatCard
-            emoji=""
             value={`${progressPct}%`}
             label="completado"
             sublabel={`${pendientes} pendiente${pendientes !== 1 ? 's' : ''}`}
@@ -243,10 +254,16 @@ export default function HomeScreen({ onAvatarPress }: Props) {
           {FILTERS.map(f => (
             <TouchableOpacity
               key={f.key}
-              style={[styles.filterTab, { backgroundColor: theme.surface, borderColor: theme.border }, filter === f.key && { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '50' }]}
+              style={[
+                styles.filterTab,
+                { backgroundColor: theme.surface, borderColor: theme.border },
+                filter === f.key && { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '50' },
+              ]}
               onPress={() => setFilter(f.key)}
             >
-              <Text style={[styles.filterText, { color: filter === f.key ? theme.primary : theme.textSecondary }]}>{f.label}</Text>
+              <Text style={[styles.filterText, { color: filter === f.key ? theme.primary : theme.textSecondary }]}>
+                {f.label}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -268,7 +285,12 @@ export default function HomeScreen({ onAvatarPress }: Props) {
         ) : (
           <View style={styles.taskList}>
             {filtered.map(task => (
-              <TaskCard key={task.id_tarea} task={task} onToggle={() => handleToggle(task)} onDelete={() => handleDelete(task.id_tarea)} />
+              <TaskCard
+                key={task.id_tarea}
+                task={task}
+                onToggle={() => handleToggle(task)}
+                onDelete={() => handleDelete(task.id_tarea)}
+              />
             ))}
           </View>
         )}
@@ -277,29 +299,36 @@ export default function HomeScreen({ onAvatarPress }: Props) {
       </ScrollView>
 
       {/* FAB */}
-<TouchableOpacity
-  style={[styles.fab, { backgroundColor: theme.primary }, shadows.glow]}
-  onPress={() => setModalVisible(true)}
-  activeOpacity={0.85}
->
-  <Text style={[styles.fabText, { color: theme.textInverse }]}>+</Text>
-</TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.fab, { backgroundColor: theme.primary }, shadows.glow]}
+        onPress={() => setModalVisible(true)}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="add" size={28} color={theme.textInverse} />
+      </TouchableOpacity>
 
-<NewTaskModal
-  visible={modalVisible}
-  onClose={() => setModalVisible(false)}
-  onSave={async (nueva) => {
-    const token = await getAccessToken();
-    if (!token) throw new Error('No hay sesión activa');
-    const creada = await crearTarea(token, nueva);
-    setTareas(prev => [creada, ...prev]);
-    setModalVisible(false);
-  }}
-/>
+      {/* Modals */}
+      <NewTaskModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        onSave={async (nueva: NuevaTarea) => {
+          const token = await getAccessToken();
+          if (!token) throw new Error('No hay sesión activa');
+          const creada = await crearTarea(token, nueva);
+          setTareas(prev => [creada, ...prev]);
+          setModalVisible(false);
+        }}
+      />
+
+      <NotificationsModal
+        visible={showNotifs}
+        onClose={() => setShowNotifs(false)}
+      />
 
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -309,34 +338,28 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.xl },
   greeting: { fontSize: typography.xxl, fontWeight: typography.bold },
   dateText: { fontSize: typography.sm, marginTop: spacing.xs, textTransform: 'capitalize' },
-  avatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginLeft: spacing.md },
+
+  headerButtons: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  headerBtn: {
+    width: 42, height: 42,
+    borderRadius: 21,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifBadge: {
+    position: 'absolute',
+    top: -2, right: -2,
+    minWidth: 16, height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  notifBadgeText: { fontSize: 9, fontWeight: typography.bold },
+
+  avatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: typography.lg, fontWeight: typography.bold },
-  headerButtons: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: spacing.sm,
-},
-headerBtn: {
-  width: 42, height: 42,
-  borderRadius: 21,
-  borderWidth: 2,
-  alignItems: 'center',
-  justifyContent: 'center',
-},
-headerBtnIcon: { fontSize: 18 },
-notifBadge: {
-  position: 'absolute',
-  top: -2, right: -2,
-  minWidth: 16, height: 16,
-  borderRadius: 8,
-  alignItems: 'center',
-  justifyContent: 'center',
-  paddingHorizontal: 3,
-},
-notifBadgeText: {
-  fontSize: 9,
-  fontWeight: typography.bold,
-},
 
   progressSection: { marginBottom: spacing.xl },
   progressHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.sm },
@@ -347,7 +370,6 @@ notifBadgeText: {
 
   statsRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xl },
   statCard: { flex: 1, borderRadius: radii.xl, padding: spacing.lg, borderWidth: 1, alignItems: 'center', gap: 2 },
-  statEmoji: { fontSize: 28, marginBottom: spacing.xs },
   statValue: { fontSize: typography.xxxl, fontWeight: typography.extrabold, lineHeight: typography.xxxl + 4 },
   statLabel: { fontSize: typography.sm, fontWeight: typography.semibold, textAlign: 'center' },
   statSublabel: { fontSize: typography.xs, textAlign: 'center', marginTop: 2 },
