@@ -14,7 +14,7 @@ import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import { listarTareas, actualizarTarea, eliminarTarea, type Tarea } from '../services/taskService';
 import { getAccessToken, getStoredUser } from '../store/authStore';
-
+import NewTaskModal, { NuevaTarea } from '../components/NewTaskModal';
 
 function TaskCard({ task, onToggle, onDelete }: {
   task: Tarea;
@@ -77,11 +77,10 @@ function StatCard({ emoji, value, label, sublabel, accentColor, bgColor, borderC
 
 
 interface Props {
-  onAddTask?: () => void;
   onAvatarPress?: () => void;
 }
 
-export default function HomeScreen({ onAddTask, onAvatarPress }: Props) {
+export default function HomeScreen({ onAvatarPress }: Props) {
   const { theme } = useTheme();
   const shadows = makeShadows(theme.shadowColor);
   const [filter, setFilter] = useState<'todas' | 'pendiente' | 'completada'>('todas');
@@ -90,6 +89,7 @@ export default function HomeScreen({ onAddTask, onAvatarPress }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [nombre, setNombre] = useState('');
   const [inicial, setInicial] = useState('?');
+  const [showNewTask, setShowNewTask] = useState(false);  // ← aquí
 
   const today = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -252,9 +252,21 @@ export default function HomeScreen({ onAddTask, onAvatarPress }: Props) {
       </ScrollView>
 
       {/* FAB */}
-      <TouchableOpacity style={[styles.fab, { backgroundColor: theme.primary }, shadows.glow]} onPress={onAddTask} activeOpacity={0.85}>
-        <Text style={[styles.fabText, { color: theme.textInverse }]}>+</Text>
-      </TouchableOpacity>
+      <TouchableOpacity
+  style={[styles.fab, { backgroundColor: theme.primary }, shadows.glow]}
+  onPress={() => setShowNewTask(true)}
+  activeOpacity={0.85}
+>
+  <Text style={[styles.fabText, { color: theme.textInverse }]}>+</Text>
+</TouchableOpacity>
+
+<NewTaskModal
+  visible={showNewTask}
+  onClose={() => setShowNewTask(false)}
+  onSave={async (nueva: NuevaTarea) => {
+    setShowNewTask(false);
+  }}
+/>
     </SafeAreaView>
   );
 }
