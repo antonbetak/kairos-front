@@ -14,7 +14,8 @@ import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import { listarTareas, actualizarTarea, eliminarTarea, type Tarea } from '../services/taskService';
 import { getAccessToken, getStoredUser } from '../store/authStore';
-import NewTaskModal, { NuevaTarea } from '../components/NewTaskModal';
+import NewTaskModal from '../components/NewTaskModal';
+import { crearTarea } from '../services/taskService';
 
 function TaskCard({ task, onToggle, onDelete }: {
   task: Tarea;
@@ -89,7 +90,7 @@ export default function HomeScreen({ onAvatarPress }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [nombre, setNombre] = useState('');
   const [inicial, setInicial] = useState('?');
-  const [showNewTask, setShowNewTask] = useState(false);  // ← aquí
+  const [modalVisible, setModalVisible] = useState(false);
 
   const today = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -252,21 +253,26 @@ export default function HomeScreen({ onAvatarPress }: Props) {
       </ScrollView>
 
       {/* FAB */}
-      <TouchableOpacity
+<TouchableOpacity
   style={[styles.fab, { backgroundColor: theme.primary }, shadows.glow]}
-  onPress={() => setShowNewTask(true)}
+  onPress={() => setModalVisible(true)}
   activeOpacity={0.85}
 >
   <Text style={[styles.fabText, { color: theme.textInverse }]}>+</Text>
 </TouchableOpacity>
 
 <NewTaskModal
-  visible={showNewTask}
-  onClose={() => setShowNewTask(false)}
-  onSave={async (nueva: NuevaTarea) => {
-    setShowNewTask(false);
+  visible={modalVisible}
+  onClose={() => setModalVisible(false)}
+  onSave={async (nueva) => {
+    const token = await getAccessToken();
+    if (!token) throw new Error('No hay sesión activa');
+    const creada = await crearTarea(token, nueva);
+    setTareas(prev => [creada, ...prev]);
+    setModalVisible(false);
   }}
 />
+
     </SafeAreaView>
   );
 }
