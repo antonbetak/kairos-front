@@ -1,5 +1,7 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
+import * as AuthSession from 'expo-auth-session';
+import { Platform } from 'react-native';
 import { apiRequest } from './api';
 import { saveSession } from '../store/authStore';
 
@@ -28,16 +30,28 @@ interface GoogleAuthResponse {
 }
 
 export async function loginConGoogle(): Promise<GoogleAuthResponse> {
+  const useProxy = true;
+  const redirectUri = AuthSession.makeRedirectUri({
+    scheme: 'kairos',
+    path: 'auth/google/callback',
+    useProxy,
+  });
+  const platform = useProxy ? 'web' : Platform.OS;
+
   // 1. Pedir la URL de autorización al backend
-  const { url } = await apiRequest<GoogleAuthUrlResponse>('/auth/google/auth-url');
+  const { url } = await apiRequest<GoogleAuthUrlResponse>(
+    `/auth/google/auth-url?platform=${encodeURIComponent(
+      platform
+    )}&redirect_uri=${encodeURIComponent(redirectUri)}`
+  );
 
   // 2. Abrir el browser del celular con esa URL
   const result = await WebBrowser.openAuthSessionAsync(
     url,
-    Linking.createURL('/auth/google/callback')
+    redirectUri
   );
 
-  if (result.type !== 'success') {
+  if (result.type !== 'success' || !result.url) {
     throw new Error('El usuario canceló el inicio de sesión con Google');
   }
 
