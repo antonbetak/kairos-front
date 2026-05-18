@@ -15,8 +15,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import ThemePicker from '../components/ThemePicker';
-import { login } from '../src/services/authService';
-import { saveSession } from '../src/store/authStore';
+import { login } from '../services/authService';
+import { saveSession } from '../store/authStore';
+import { loginConGoogle } from '../services/googleAuthService.ts';
 
 interface Props {
   onLogin?: () => void;
@@ -33,6 +34,18 @@ export default function LoginScreen({ onLogin, onRegister, onGoogleLogin }: Prop
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+
+  const handleGoogleLogin = async () => {
+  setLoading(true);
+  try {
+    await loginConGoogle();
+    onLogin?.();
+  } catch (error: any) {
+    Alert.alert('Error', error.message || 'No se pudo iniciar sesión con Google');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -190,7 +203,7 @@ export default function LoginScreen({ onLogin, onRegister, onGoogleLogin }: Prop
               styles.googleButton,
               { backgroundColor: theme.surfaceElevated, borderColor: theme.border },
             ]}
-            onPress={onGoogleLogin}
+            onPress={handleGoogleLogin}
             activeOpacity={0.8}
           >
             <Text style={styles.googleIcon}>G</Text>
