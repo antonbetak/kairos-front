@@ -95,9 +95,10 @@ function MetricCard({ label, value, unit, accentColor, bgColor, borderColor }: {
 
 interface Props {
   onAddTask?: () => void;
+  onAvatarPress?: () => void;
 }
 
-export default function HomeScreen({ onAddTask }: Props) {
+export default function HomeScreen({ onAddTask, onAvatarPress }: Props) {
   const { theme } = useTheme();
   const shadows = makeShadows(theme.shadowColor);
   const [filter, setFilter] = useState<'todas' | 'pendiente' | 'completada'>('todas');
@@ -183,11 +184,11 @@ export default function HomeScreen({ onAddTask }: Props) {
             <Text style={[styles.dateText, { color: theme.textSecondary }]}>{today}</Text>
           </View>
           <TouchableOpacity
-            style={[styles.avatar, { backgroundColor: theme.primaryMuted, borderColor: theme.primary }]}
-            onPress={cargarTareas}
-          >
-            <Text style={[styles.avatarText, { color: theme.primary }]}>↻</Text>
-          </TouchableOpacity>
+  style={[styles.avatar, { backgroundColor: theme.primaryMuted, borderColor: theme.primary }]}
+  onPress={onAvatarPress}
+>
+  <Text style={[styles.avatarText, { color: theme.primary }]}>A</Text>
+</TouchableOpacity>
         </View>
 
         {/* Progress bar */}
