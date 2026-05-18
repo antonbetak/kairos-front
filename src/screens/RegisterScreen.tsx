@@ -10,11 +10,13 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import ThemePicker from '../components/ThemePicker';
+import { register } from '../services/authService';
 
 interface Props {
   onRegister?: () => void;
@@ -50,11 +52,16 @@ export default function RegisterScreen({ onRegister, onBack }: Props) {
   const handleRegister = async () => {
     if (!validate()) return;
     setLoading(true);
-    // TODO: connect to auth_service via API gateway
-    setTimeout(() => {
+    try {
+      await register(nombre.trim(), email.trim(), password);
+      Alert.alert('¡Cuenta creada!', 'Ya puedes iniciar sesión.', [
+        { text: 'OK', onPress: onRegister },
+      ]);
+    } catch (error: any) {
+      Alert.alert('Error al registrarse', error.message || 'Intenta con otro correo');
+    } finally {
       setLoading(false);
-      onRegister?.();
-    }, 1200);
+    }
   };
 
   const inputStyle = (field: string) => [
@@ -82,7 +89,6 @@ export default function RegisterScreen({ onRegister, onBack }: Props) {
         style={styles.keyboardView}
       >
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-
 
           {/* Top row */}
           <View style={styles.topRow}>
