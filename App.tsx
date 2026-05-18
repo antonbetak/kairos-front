@@ -4,6 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import LoginScreen from './src/screens/LoginScreen';
+import RegisterScreen from './src/screens/RegisterScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import ScheduleScreen from './src/screens/ScheduleScreen';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
@@ -63,15 +64,27 @@ function PlaceholderScreen({ title }: { title: string }) {
 function AppInner() {
   const { theme } = useTheme();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [showRegister, setShowRegister] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('home');
 
   if (!isLoggedIn) {
+    if (showRegister) {
+      return (
+        <>
+          <StatusBar style="dark" />
+          <RegisterScreen
+            onRegister={() => { setShowRegister(false); setIsLoggedIn(true); }}
+            onBack={() => setShowRegister(false)}
+          />
+        </>
+      );
+    }
     return (
       <>
         <StatusBar style="dark" />
         <LoginScreen
           onLogin={() => setIsLoggedIn(true)}
-          onRegister={() => {/* TODO */}}
+          onRegister={() => setShowRegister(true)}
           onGoogleLogin={() => setIsLoggedIn(true)}
         />
       </>
