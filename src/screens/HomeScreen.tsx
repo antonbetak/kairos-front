@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import { listarTareas, actualizarTarea, eliminarTarea, type Tarea } from '../services/taskService';
-import { getAccessToken } from '../store/authStore';
+import { getAccessToken, getStoredUser } from '../store/authStore';
 
 
 function TaskCard({ task, onToggle, onDelete }: {
@@ -22,46 +22,30 @@ function TaskCard({ task, onToggle, onDelete }: {
   onDelete: () => void;
 }) {
   const { theme } = useTheme();
-
   const statusConfig = {
     false: { label: 'Pendiente', color: theme.textSecondary, bg: theme.surfaceElevated },
     true:  { label: 'Completada', color: theme.success, bg: theme.successMuted },
   };
-
   const status = statusConfig[String(task.completada) as 'false' | 'true'];
 
   return (
     <TouchableOpacity
-      style={[
-        styles.taskCard,
-        { backgroundColor: theme.surface, borderColor: theme.border },
-        task.completada && styles.taskCardDone,
-      ]}
+      style={[styles.taskCard, { backgroundColor: theme.surface, borderColor: theme.border }, task.completada && styles.taskCardDone]}
       onPress={onToggle}
-      onLongPress={() =>
-        Alert.alert('Eliminar tarea', `¿Eliminar "${task.titulo}"?`, [
-          { text: 'Cancelar', style: 'cancel' },
-          { text: 'Eliminar', style: 'destructive', onPress: onDelete },
-        ])
-      }
+      onLongPress={() => Alert.alert('Eliminar tarea', `¿Eliminar "${task.titulo}"?`, [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Eliminar', style: 'destructive', onPress: onDelete },
+      ])}
       activeOpacity={0.75}
     >
       <View style={styles.taskCardLeft}>
         <View style={[styles.prioDot, { backgroundColor: task.completada ? theme.success : theme.warning }]} />
         <Text style={styles.taskIcon}>{task.completada ? '✅' : '⬜'}</Text>
         <View style={styles.taskInfo}>
-          <Text style={[
-            styles.taskTitle,
-            { color: theme.textPrimary },
-            task.completada && { textDecorationLine: 'line-through', color: theme.textTertiary },
-          ]}>
+          <Text style={[styles.taskTitle, { color: theme.textPrimary }, task.completada && { textDecorationLine: 'line-through', color: theme.textTertiary }]}>
             {task.titulo}
           </Text>
-          {task.descripcion && (
-            <Text style={[styles.taskDate, { color: theme.textTertiary }]} numberOfLines={1}>
-              {task.descripcion}
-            </Text>
-          )}
+          {task.descripcion && <Text style={[styles.taskDate, { color: theme.textTertiary }]} numberOfLines={1}>{task.descripcion}</Text>}
           {task.due_at && (
             <Text style={[styles.taskDate, { color: theme.textTertiary }]}>
               ⏰ {new Date(task.due_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
@@ -76,22 +60,21 @@ function TaskCard({ task, onToggle, onDelete }: {
   );
 }
 
-function MetricCard({ label, value, unit, accentColor, bgColor, borderColor }: {
-  label: string;
-  value: string | number;
-  unit?: string;
-  accentColor: string;
-  bgColor: string;
-  borderColor: string;
+
+function StatCard({ emoji, value, label, sublabel, accentColor, bgColor, borderColor }: {
+  emoji: string; value: string; label: string; sublabel?: string;
+  accentColor: string; bgColor: string; borderColor: string;
 }) {
   return (
-    <View style={[styles.metricCard, { backgroundColor: bgColor, borderColor }]}>
-      <Text style={[styles.metricValue, { color: accentColor }]}>{value}</Text>
-      {unit && <Text style={[styles.metricUnit, { color: accentColor + '99' }]}>{unit}</Text>}
-      <Text style={[styles.metricLabel, { color: accentColor + 'BB' }]}>{label}</Text>
+    <View style={[styles.statCard, { backgroundColor: bgColor, borderColor }]}>
+      <Text style={styles.statEmoji}>{emoji}</Text>
+      <Text style={[styles.statValue, { color: accentColor }]}>{value}</Text>
+      <Text style={[styles.statLabel, { color: accentColor }]}>{label}</Text>
+      {sublabel && <Text style={[styles.statSublabel, { color: accentColor + '99' }]}>{sublabel}</Text>}
     </View>
   );
 }
+
 
 interface Props {
   onAddTask?: () => void;
@@ -105,10 +88,24 @@ export default function HomeScreen({ onAddTask, onAvatarPress }: Props) {
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [nombre, setNombre] = useState('');
+  const [inicial, setInicial] = useState('?');
 
-  const today = new Date().toLocaleDateString('es-MX', {
-    weekday: 'long', day: 'numeric', month: 'long',
-  });
+  const today = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  useEffect(() => {
+    getStoredUser().then(user => {
+      if (user?.nombre) {
+        const firstName = user.nombre.split(' ')[0];
+        setNombre(firstName);
+        setInicial(firstName[0]?.toUpperCase() ?? '?');
+      } else if (user?.email) {
+        const name = user.email.split('@')[0];
+        setNombre(name);
+        setInicial(name[0]?.toUpperCase() ?? '?');
+      }
+    });
+  }, []);
 
   const cargarTareas = useCallback(async () => {
     try {
@@ -124,21 +121,15 @@ export default function HomeScreen({ onAddTask, onAvatarPress }: Props) {
     }
   }, []);
 
-  useEffect(() => {
-    cargarTareas();
-  }, [cargarTareas]);
+  useEffect(() => { cargarTareas(); }, [cargarTareas]);
 
   const handleToggle = async (tarea: Tarea) => {
     try {
       const token = await getAccessToken();
       if (!token) return;
-      const actualizada = await actualizarTarea(token, tarea.id_tarea, {
-        completada: !tarea.completada,
-      });
+      const actualizada = await actualizarTarea(token, tarea.id_tarea, { completada: !tarea.completada });
       setTareas(prev => prev.map(t => t.id_tarea === actualizada.id_tarea ? actualizada : t));
-    } catch (err: any) {
-      Alert.alert('Error', err.message);
-    }
+    } catch (err: any) { Alert.alert('Error', err.message); }
   };
 
   const handleDelete = async (id: string) => {
@@ -147,24 +138,21 @@ export default function HomeScreen({ onAddTask, onAvatarPress }: Props) {
       if (!token) return;
       await eliminarTarea(token, id);
       setTareas(prev => prev.filter(t => t.id_tarea !== id));
-    } catch (err: any) {
-      Alert.alert('Error', err.message);
-    }
+    } catch (err: any) { Alert.alert('Error', err.message); }
   };
 
   const completadas = tareas.filter(t => t.completada).length;
   const total = tareas.length;
+  const pendientes = total - completadas;
   const progressPct = total > 0 ? Math.round((completadas / total) * 100) : 0;
+  const hoy = new Date().toDateString();
+  const completadasHoy = tareas.filter(t => t.completada && t.updated_at && new Date(t.updated_at).toDateString() === hoy).length;
 
-  const filtered = filter === 'todas'
-    ? tareas
-    : filter === 'completada'
-    ? tareas.filter(t => t.completada)
-    : tareas.filter(t => !t.completada);
+  const filtered = filter === 'todas' ? tareas : filter === 'completada' ? tareas.filter(t => t.completada) : tareas.filter(t => !t.completada);
 
   const FILTERS: Array<{ key: typeof filter; label: string }> = [
-    { key: 'todas',      label: 'Todas' },
-    { key: 'pendiente',  label: 'Pendientes' },
+    { key: 'todas', label: 'Todas' },
+    { key: 'pendiente', label: 'Pendientes' },
     { key: 'completada', label: 'Completadas' },
   ];
 
@@ -172,23 +160,21 @@ export default function HomeScreen({ onAddTask, onAvatarPress }: Props) {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor={theme.bg} />
 
-      <ScrollView
-        style={styles.scroll}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
+      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+
         {/* Header */}
         <View style={styles.header}>
-          <View>
-            <Text style={[styles.greeting, { color: theme.textPrimary }]}>Buenos días ☀️</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.greeting, { color: theme.textPrimary }]}>Hola, {nombre || '…'}</Text>
             <Text style={[styles.dateText, { color: theme.textSecondary }]}>{today}</Text>
           </View>
           <TouchableOpacity
-  style={[styles.avatar, { backgroundColor: theme.primaryMuted, borderColor: theme.primary }]}
-  onPress={onAvatarPress}
->
-  <Text style={[styles.avatarText, { color: theme.primary }]}>A</Text>
-</TouchableOpacity>
+            style={[styles.avatar, { backgroundColor: theme.primaryMuted, borderColor: theme.primary }]}
+            onPress={onAvatarPress}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.avatarText, { color: theme.primary }]}>{inicial}</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Progress bar */}
@@ -202,28 +188,25 @@ export default function HomeScreen({ onAddTask, onAvatarPress }: Props) {
           </View>
         </View>
 
-        {/* Metrics */}
-        <View style={styles.metricsRow}>
-          <MetricCard
-            label="Completadas"
-            value={`${completadas}/${total}`}
-            accentColor={theme.success}
-            bgColor={theme.successMuted}
-            borderColor={theme.success + '40'}
-          />
-          <MetricCard
-            label="Pendientes"
-            value={total - completadas}
+        {/* Stats llamativas */}
+        <View style={styles.statsRow}>
+          <StatCard
+            emoji=""
+            value={`${completadasHoy}`}
+            label={completadasHoy === 1 ? 'tarea hoy' : 'tareas hoy'}
+            sublabel={completadasHoy > 0 ? '¡sigue así!' : 'empieza el día'}
             accentColor={theme.warning}
             bgColor={theme.primaryMuted}
-            borderColor={theme.primary + '40'}
+            borderColor={theme.warning + '40'}
           />
-          <MetricCard
-            label="Total"
-            value={total}
-            accentColor={theme.secondary}
-            bgColor={theme.secondaryMuted}
-            borderColor={theme.secondary + '40'}
+          <StatCard
+            emoji=""
+            value={`${progressPct}%`}
+            label="completado"
+            sublabel={`${pendientes} pendiente${pendientes !== 1 ? 's' : ''}`}
+            accentColor={theme.primary}
+            bgColor={theme.primaryMuted}
+            borderColor={theme.primary + '40'}
           />
         </View>
 
@@ -235,19 +218,10 @@ export default function HomeScreen({ onAddTask, onAvatarPress }: Props) {
           {FILTERS.map(f => (
             <TouchableOpacity
               key={f.key}
-              style={[
-                styles.filterTab,
-                { backgroundColor: theme.surface, borderColor: theme.border },
-                filter === f.key && { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '50' },
-              ]}
+              style={[styles.filterTab, { backgroundColor: theme.surface, borderColor: theme.border }, filter === f.key && { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '50' }]}
               onPress={() => setFilter(f.key)}
             >
-              <Text style={[
-                styles.filterText,
-                { color: filter === f.key ? theme.primary : theme.textSecondary },
-              ]}>
-                {f.label}
-              </Text>
+              <Text style={[styles.filterText, { color: filter === f.key ? theme.primary : theme.textSecondary }]}>{f.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -269,12 +243,7 @@ export default function HomeScreen({ onAddTask, onAvatarPress }: Props) {
         ) : (
           <View style={styles.taskList}>
             {filtered.map(task => (
-              <TaskCard
-                key={task.id_tarea}
-                task={task}
-                onToggle={() => handleToggle(task)}
-                onDelete={() => handleDelete(task.id_tarea)}
-              />
+              <TaskCard key={task.id_tarea} task={task} onToggle={() => handleToggle(task)} onDelete={() => handleDelete(task.id_tarea)} />
             ))}
           </View>
         )}
@@ -283,11 +252,7 @@ export default function HomeScreen({ onAddTask, onAvatarPress }: Props) {
       </ScrollView>
 
       {/* FAB */}
-      <TouchableOpacity
-        style={[styles.fab, { backgroundColor: theme.primary }, shadows.glow]}
-        onPress={onAddTask}
-        activeOpacity={0.85}
-      >
+      <TouchableOpacity style={[styles.fab, { backgroundColor: theme.primary }, shadows.glow]} onPress={onAddTask} activeOpacity={0.85}>
         <Text style={[styles.fabText, { color: theme.textInverse }]}>+</Text>
       </TouchableOpacity>
     </SafeAreaView>
@@ -297,182 +262,51 @@ export default function HomeScreen({ onAddTask, onAvatarPress }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { flex: 1 },
-  scrollContent: {
-    paddingHorizontal: spacing.base,
-    paddingTop: spacing.md,
-  },
+  scrollContent: { paddingHorizontal: spacing.base, paddingTop: spacing.md },
 
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: spacing.xl,
-  },
-  greeting: {
-    fontSize: typography.xxl,
-    fontWeight: typography.bold,
-  },
-  dateText: {
-    fontSize: typography.sm,
-    marginTop: spacing.xs,
-    textTransform: 'capitalize',
-  },
-  avatar: {
-    width: 40, height: 40,
-    borderRadius: 20,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontSize: typography.lg,
-    fontWeight: typography.bold,
-  },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.xl },
+  greeting: { fontSize: typography.xxl, fontWeight: typography.bold },
+  dateText: { fontSize: typography.sm, marginTop: spacing.xs, textTransform: 'capitalize' },
+  avatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginLeft: spacing.md },
+  avatarText: { fontSize: typography.lg, fontWeight: typography.bold },
 
   progressSection: { marginBottom: spacing.xl },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  progressLabel: {
-    fontSize: typography.sm,
-    fontWeight: typography.medium,
-  },
-  progressPct: {
-    fontSize: typography.sm,
-    fontWeight: typography.bold,
-  },
-  progressTrack: {
-    height: 4,
-    borderRadius: radii.full,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: radii.full,
-  },
+  progressHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.sm },
+  progressLabel: { fontSize: typography.sm, fontWeight: typography.medium },
+  progressPct: { fontSize: typography.sm, fontWeight: typography.bold },
+  progressTrack: { height: 6, borderRadius: radii.full, overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: radii.full },
 
-  metricsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.xl,
-  },
-  metricCard: {
-    flex: 1,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  metricValue: {
-    fontSize: typography.xl,
-    fontWeight: typography.bold,
-  },
-  metricUnit: {
-    fontSize: typography.xs,
-    marginTop: 1,
-  },
-  metricLabel: {
-    fontSize: typography.xs,
-    marginTop: spacing.xs,
-    textAlign: 'center',
-  },
+  statsRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xl },
+  statCard: { flex: 1, borderRadius: radii.xl, padding: spacing.lg, borderWidth: 1, alignItems: 'center', gap: 2 },
+  statEmoji: { fontSize: 28, marginBottom: spacing.xs },
+  statValue: { fontSize: typography.xxxl, fontWeight: typography.extrabold, lineHeight: typography.xxxl + 4 },
+  statLabel: { fontSize: typography.sm, fontWeight: typography.semibold, textAlign: 'center' },
+  statSublabel: { fontSize: typography.xs, textAlign: 'center', marginTop: 2 },
 
-  sectionTitle: {
-    fontSize: typography.lg,
-    fontWeight: typography.bold,
-    marginBottom: spacing.md,
-  },
+  sectionTitle: { fontSize: typography.lg, fontWeight: typography.bold, marginBottom: spacing.md },
 
-  filterRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.base,
-  },
-  filterTab: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radii.full,
-    borderWidth: 1,
-  },
-  filterText: {
-    fontSize: typography.xs,
-    fontWeight: typography.medium,
-  },
+  filterRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.base },
+  filterTab: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radii.full, borderWidth: 1 },
+  filterText: { fontSize: typography.xs, fontWeight: typography.medium },
 
   taskList: { gap: spacing.sm },
-  taskCard: {
-    borderRadius: radii.lg,
-    padding: spacing.base,
-    borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
+  taskCard: { borderRadius: radii.lg, padding: spacing.base, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   taskCardDone: { opacity: 0.55 },
-  taskCardLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    flex: 1,
-  },
-  prioDot: {
-    width: 6, height: 6,
-    borderRadius: 3,
-  },
+  taskCardLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
+  prioDot: { width: 6, height: 6, borderRadius: 3 },
   taskIcon: { fontSize: 16 },
   taskInfo: { flex: 1 },
-  taskTitle: {
-    fontSize: typography.base,
-    fontWeight: typography.medium,
-  },
-  taskDate: {
-    fontSize: typography.xs,
-    marginTop: 2,
-  },
-  statusBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radii.full,
-    marginLeft: spacing.sm,
-  },
-  statusText: {
-    fontSize: typography.xs,
-    fontWeight: typography.semibold,
-  },
+  taskTitle: { fontSize: typography.base, fontWeight: typography.medium },
+  taskDate: { fontSize: typography.xs, marginTop: 2 },
+  statusBadge: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radii.full, marginLeft: spacing.sm },
+  statusText: { fontSize: typography.xs, fontWeight: typography.semibold },
 
-  errorBox: {
-    alignItems: 'center',
-    marginTop: spacing.xl,
-    gap: spacing.sm,
-  },
-  errorText: {
-    fontSize: typography.sm,
-    textAlign: 'center',
-  },
-  retryText: {
-    fontSize: typography.sm,
-    fontWeight: typography.semibold,
-  },
-  emptyText: {
-    textAlign: 'center',
-    marginTop: spacing.xl,
-    fontSize: typography.sm,
-  },
+  errorBox: { alignItems: 'center', marginTop: spacing.xl, gap: spacing.sm },
+  errorText: { fontSize: typography.sm, textAlign: 'center' },
+  retryText: { fontSize: typography.sm, fontWeight: typography.semibold },
+  emptyText: { textAlign: 'center', marginTop: spacing.xl, fontSize: typography.sm },
 
-  fab: {
-    position: 'absolute',
-    bottom: 80,
-    right: spacing.xl,
-    width: 56, height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fabText: {
-    fontSize: 28,
-    fontWeight: typography.light,
-    lineHeight: 32,
-  },
+  fab: { position: 'absolute', bottom: 80, right: spacing.xl, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
+  fabText: { fontSize: 28, fontWeight: typography.light, lineHeight: 32 },
 });
