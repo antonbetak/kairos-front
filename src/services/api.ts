@@ -1,4 +1,4 @@
-const BASE_URL = 'https://afterlife-nail-dumpling.ngrok-free.dev';
+const BASE_URL = 'http://192.168.100.5:8000';
 
 type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
