@@ -12,23 +12,26 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as WebBrowser from 'expo-web-browser';
+import { useSignIn, useOAuth } from '@clerk/expo';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import ThemePicker from '../components/ThemePicker';
 import { Ionicons } from '@expo/vector-icons';
-import { login } from '../services/authService';
-import { saveSession } from '../store/authStore';
-import { loginConGoogle } from '../services/googleAuthService.ts';
+
+// Necesario para cerrar el navegador de OAuth correctamente en Expo
+WebBrowser.maybeCompleteAuthSession();
 
 interface Props {
-  onLogin?: () => void;
   onRegister?: () => void;
-  onGoogleLogin?: () => void;
 }
 
-export default function LoginScreen({ onLogin, onRegister, onGoogleLogin }: Props) {
+export default function LoginScreen({ onRegister }: Props) {
   const { theme } = useTheme();
   const shadows = makeShadows(theme.shadowColor);
+
+  const { signIn, setActive, isLoaded } = useSignIn();
+  const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -36,19 +39,10 @@ export default function LoginScreen({ onLogin, onRegister, onGoogleLogin }: Prop
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleGoogleLogin = async () => {
-  setLoading(true);
-  try {
-    await loginConGoogle();
-    onLogin?.();
-  } catch (error: any) {
-    Alert.alert('Error', error.message || 'No se pudo iniciar sesión con Google');
-  } finally {
-    setLoading(false);
-  }
-};
+  // ─── Login con email y contraseña ─────────────────────────────────────────
 
   const handleLogin = async () => {
+    if (!isLoaded) return;
     if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Por favor ingresa tu correo y contraseña');
       return;
@@ -56,29 +50,51 @@ export default function LoginScreen({ onLogin, onRegister, onGoogleLogin }: Prop
 
     setLoading(true);
     try {
-      const response = await login(email.trim(), password);
+      const result = await signIn.create({
+        identifier: email.trim(),
+        password,
+      });
 
-      await saveSession(
-        response.access_token,
-        response.refresh_token,
-        // El token tiene el usuario, pero no lo decodificamos aquí —
-        // lo cargamos desde /auth/me después del login si se necesita
-        { id_usuario: '', nombre: '', email: email.trim() }
-      );
-
-      onLogin?.();
+      if (result.status === 'complete') {
+        // Clerk activa la sesión → App.tsx detecta isSignedIn automáticamente
+        await setActive({ session: result.createdSessionId });
+      } else {
+        Alert.alert('Error', 'No se pudo completar el inicio de sesión. Intenta de nuevo.');
+      }
     } catch (error: any) {
-      Alert.alert('Error al iniciar sesión', error.message || 'Credenciales incorrectas');
+      const msg =
+        error?.errors?.[0]?.longMessage ||
+        error?.errors?.[0]?.message ||
+        'Credenciales incorrectas';
+      Alert.alert('Error al iniciar sesión', msg);
     } finally {
       setLoading(false);
     }
   };
 
+  // ─── Login con Google (abre navegador, compatible con Expo Go) ────────────
+
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    try {
+      const { createdSessionId, setActive: setActiveOAuth } = await startOAuthFlow();
+      if (createdSessionId) {
+        await setActiveOAuth!({ session: createdSessionId });
+        // App.tsx detecta isSignedIn automáticamente
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error?.errors?.[0]?.message || 'No se pudo iniciar sesión con Google');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── UI (idéntica al original) ────────────────────────────────────────────
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
       <StatusBar barStyle="dark-content" backgroundColor={theme.bg} />
 
-      {/* Decorative circles */}
       <View style={[styles.decorCircle1, { backgroundColor: theme.primary }]} />
       <View style={[styles.decorCircle2, { backgroundColor: theme.secondary }]} />
 
@@ -86,7 +102,6 @@ export default function LoginScreen({ onLogin, onRegister, onGoogleLogin }: Prop
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        {/* Theme picker — top right */}
         <View style={styles.themePickerRow}>
           <ThemePicker compact />
         </View>
@@ -182,7 +197,7 @@ export default function LoginScreen({ onLogin, onRegister, onGoogleLogin }: Prop
             ]}
             onPress={handleLogin}
             activeOpacity={0.85}
-            disabled={loading}
+            disabled={loading || !isLoaded}
           >
             {loading ? (
               <ActivityIndicator color={theme.textInverse} size="small" />
@@ -210,6 +225,7 @@ export default function LoginScreen({ onLogin, onRegister, onGoogleLogin }: Prop
             ]}
             onPress={handleGoogleLogin}
             activeOpacity={0.8}
+            disabled={loading}
           >
             <Text style={styles.googleIcon}>G</Text>
             <Text style={[styles.googleButtonText, { color: theme.textPrimary }]}>
@@ -332,7 +348,6 @@ const styles = StyleSheet.create({
     fontSize: typography.base,
   },
   eyeButton: { padding: spacing.xs },
-  eyeText: { fontSize: 16 },
 
   loginButton: {
     height: 52,

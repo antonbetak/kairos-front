@@ -13,20 +13,21 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSignUp } from '@clerk/expo';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import ThemePicker from '../components/ThemePicker';
 import { Ionicons } from '@expo/vector-icons';
-import { register } from '../services/authService';
 
 interface Props {
-  onRegister?: () => void;
   onBack?: () => void;
 }
 
-export default function RegisterScreen({ onRegister, onBack }: Props) {
+export default function RegisterScreen({ onBack }: Props) {
   const { theme } = useTheme();
   const shadows = makeShadows(theme.shadowColor);
+
+  const { signUp, setActive, isLoaded } = useSignUp();
 
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
@@ -38,28 +39,69 @@ export default function RegisterScreen({ onRegister, onBack }: Props) {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Clerk requiere verificar el correo antes de activar la cuenta
+  const [pendingVerification, setPendingVerification] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
+
+
   const validate = () => {
     const newErrors: Record<string, string> = {};
-    if (!nombre.trim())            newErrors.nombre = 'El nombre es requerido';
-    if (!email.trim())             newErrors.email = 'El correo es requerido';
-    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = 'Correo inválido';
-    if (!password)                 newErrors.password = 'La contraseña es requerida';
-    else if (password.length < 8)  newErrors.password = 'Mínimo 8 caracteres';
-    if (password !== confirmPassword) newErrors.confirmPassword = 'Las contraseñas no coinciden';
+    if (!nombre.trim())                       newErrors.nombre = 'El nombre es requerido';
+    if (!email.trim())                        newErrors.email = 'El correo es requerido';
+    else if (!/\S+@\S+\.\S+/.test(email))    newErrors.email = 'Correo inválido';
+    if (!password)                            newErrors.password = 'La contraseña es requerida';
+    else if (password.length < 8)            newErrors.password = 'Mínimo 8 caracteres';
+    if (password !== confirmPassword)        newErrors.confirmPassword = 'Las contraseñas no coinciden';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+
   const handleRegister = async () => {
-    if (!validate()) return;
+    if (!isLoaded || !validate()) return;
     setLoading(true);
     try {
-      await register(nombre.trim(), email.trim(), password);
-      Alert.alert('¡Cuenta creada!', 'Ya puedes iniciar sesión.', [
-        { text: 'OK', onPress: onRegister },
-      ]);
+      await signUp.create({
+        firstName: nombre.trim(),
+        emailAddress: email.trim(),
+        password,
+      });
+
+      // Clerk manda un código al correo para verificar
+      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+      setPendingVerification(true);
     } catch (error: any) {
-      Alert.alert('Error al registrarse', error.message || 'Intenta con otro correo');
+      const msg =
+        error?.errors?.[0]?.longMessage ||
+        error?.errors?.[0]?.message ||
+        'Intenta con otro correo';
+      Alert.alert('Error al registrarse', msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  const handleVerify = async () => {
+    if (!isLoaded) return;
+    setLoading(true);
+    try {
+      const result = await signUp.attemptEmailAddressVerification({
+        code: verificationCode.trim(),
+      });
+
+      if (result.status === 'complete') {
+        // Clerk activa la sesión → App.tsx detecta isSignedIn automáticamente
+        await setActive({ session: result.createdSessionId });
+      } else {
+        Alert.alert('Error', 'El código no es válido. Intenta de nuevo.');
+      }
+    } catch (error: any) {
+      const msg =
+        error?.errors?.[0]?.longMessage ||
+        error?.errors?.[0]?.message ||
+        'Código incorrecto';
+      Alert.alert('Error de verificación', msg);
     } finally {
       setLoading(false);
     }
@@ -77,11 +119,109 @@ export default function RegisterScreen({ onRegister, onBack }: Props) {
     },
   ];
 
+
+  if (pendingVerification) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
+        <StatusBar barStyle="dark-content" backgroundColor={theme.bg} />
+        <View style={[styles.decorCircle1, { backgroundColor: theme.secondary }]} />
+        <View style={[styles.decorCircle2, { backgroundColor: theme.primary }]} />
+
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardView}
+        >
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <View style={styles.topRow}>
+              <ThemePicker compact />
+            </View>
+
+            <View style={styles.logoSection}>
+              <View style={styles.logoMark}>
+                <View style={[styles.logoRing, { borderColor: theme.primary }]} />
+                <View style={[styles.logoDot, { backgroundColor: theme.primary }]} />
+              </View>
+              <Text style={[styles.logoText, { color: theme.textPrimary }]}>kairos</Text>
+            </View>
+
+            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }, shadows.md]}>
+              <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>Verifica tu correo</Text>
+              <Text style={[styles.cardSubtitle, { color: theme.textSecondary }]}>
+                Te enviamos un código a {email}. Revisa tu bandeja de entrada.
+              </Text>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Código de verificación</Text>
+                <View style={[
+                  styles.inputWrapper,
+                  {
+                    backgroundColor: theme.surfaceElevated,
+                    borderColor: focusedField === 'code' ? theme.primary : theme.border,
+                  },
+                ]}>
+                  <TextInput
+                    style={[styles.input, { color: theme.textPrimary, flex: 1, letterSpacing: 4, textAlign: 'center' }]}
+                    placeholder="· · · · · ·"
+                    placeholderTextColor={theme.textTertiary}
+                    value={verificationCode}
+                    onChangeText={setVerificationCode}
+                    onFocus={() => setFocusedField('code')}
+                    onBlur={() => setFocusedField(null)}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    autoFocus
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.registerButton,
+                  { backgroundColor: theme.primary },
+                  loading && styles.buttonDisabled,
+                  shadows.glow,
+                ]}
+                onPress={handleVerify}
+                activeOpacity={0.85}
+                disabled={loading || verificationCode.length < 6}
+              >
+                {loading ? (
+                  <ActivityIndicator color={theme.textInverse} size="small" />
+                ) : (
+                  <Text style={[styles.registerButtonText, { color: theme.textInverse }]}>
+                    Verificar
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.resendRow}
+                onPress={() => signUp.prepareEmailAddressVerification({ strategy: 'email_code' })}
+              >
+                <Text style={[styles.resendText, { color: theme.textTertiary }]}>
+                  ¿No recibiste el código?{' '}
+                </Text>
+                <Text style={[styles.resendLink, { color: theme.primary }]}>Reenviar</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.loginRow}>
+              <TouchableOpacity onPress={() => setPendingVerification(false)}>
+                <Text style={[styles.loginLink, { color: theme.primary }]}>← Volver</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
+  // ─── Pantalla de registro ─────────────────────────────────────────────────
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
       <StatusBar barStyle="dark-content" backgroundColor={theme.bg} />
 
-      {/* Decorative circles */}
       <View style={[styles.decorCircle1, { backgroundColor: theme.secondary }]} />
       <View style={[styles.decorCircle2, { backgroundColor: theme.primary }]} />
 
@@ -91,7 +231,6 @@ export default function RegisterScreen({ onRegister, onBack }: Props) {
       >
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
-          {/* Top row */}
           <View style={styles.topRow}>
             <ThemePicker compact />
           </View>
@@ -218,7 +357,7 @@ export default function RegisterScreen({ onRegister, onBack }: Props) {
               ]}
               onPress={handleRegister}
               activeOpacity={0.85}
-              disabled={loading}
+              disabled={loading || !isLoaded}
             >
               {loading ? (
                 <ActivityIndicator color={theme.textInverse} size="small" />
@@ -272,20 +411,9 @@ const styles = StyleSheet.create({
 
   topRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     alignItems: 'center',
     marginBottom: spacing.lg,
-  },
-  backButton: {
-    width: 36, height: 36,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  backArrow: {
-    fontSize: typography.lg,
-    lineHeight: typography.lg + 2,
   },
 
   logoSection: {
@@ -352,7 +480,6 @@ const styles = StyleSheet.create({
     fontSize: typography.base,
   },
   eyeButton: { padding: spacing.xs },
-  eyeText: { fontSize: 16 },
   errorText: {
     fontSize: typography.xs,
     marginTop: spacing.xs,
@@ -379,6 +506,17 @@ const styles = StyleSheet.create({
   },
   loginText: { fontSize: typography.sm },
   loginLink: {
+    fontSize: typography.sm,
+    fontWeight: typography.semibold,
+  },
+
+  resendRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: spacing.lg,
+  },
+  resendText: { fontSize: typography.sm },
+  resendLink: {
     fontSize: typography.sm,
     fontWeight: typography.semibold,
   },

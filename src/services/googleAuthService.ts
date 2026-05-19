@@ -30,7 +30,8 @@ interface GoogleAuthResponse {
 
 export async function loginConGoogle(): Promise<GoogleAuthResponse> {
   // 1. El redirect URI que Expo puede capturar (ngrok)
-  const redirectUri = Linking.createURL('/auth/google/callback');
+  const redirectUri = Linking.createURL('/auth/google/callback', { scheme: 'kairos' });
+console.log('Google redirectUri:', redirectUri);
 
   // 2. Pedir la URL de autorización pasando platform=ios y el redirect URI de Expo
   const { url } = await apiRequest<GoogleAuthUrlResponse>(

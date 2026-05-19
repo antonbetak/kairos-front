@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { ClerkProvider, ClerkLoaded, useAuth } from '@clerk/expo';
+import { tokenCache } from '@clerk/expo/token-cache';
 
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
@@ -11,7 +13,12 @@ import ProfileScreen from './src/screens/ProfileScreen';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { spacing, typography } from './src/styles/theme';
 
-// ─── Tab navigation ───────────────────────────────────────────────────────────
+const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
+
+if (!publishableKey) {
+  throw new Error('Falta EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY en el archivo .env');
+}
+
 
 type Tab = 'home' | 'schedule' | 'stats' | 'agent';
 
@@ -53,29 +60,37 @@ function PlaceholderScreen({ title }: { title: string }) {
   const { theme } = useTheme();
   return (
     <View style={[styles.placeholder, { backgroundColor: theme.bg }]}>
-      <Text style={styles.placeholderIcon}>🚧</Text>
       <Text style={[styles.placeholderTitle, { color: theme.textPrimary }]}>{title}</Text>
       <Text style={[styles.placeholderSub, { color: theme.textTertiary }]}>Próximamente</Text>
     </View>
   );
 }
 
-// ─── Inner app (needs ThemeProvider above) ────────────────────────────────────
 
 function AppInner() {
   const { theme } = useTheme();
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  // isSignedIn de Clerk reemplaza el useState(false) de isLoggedIn
+  const { isSignedIn, isLoaded } = useAuth();
   const [showRegister, setShowRegister] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('home');
 
-  if (!isLoggedIn) {
+  // Clerk cargando la sesión guardada en expo-secure-store
+  if (!isLoaded) {
+    return (
+      <View style={[styles.loading, { backgroundColor: theme.bg }]}>
+        <ActivityIndicator color={theme.primary} />
+      </View>
+    );
+  }
+
+  // No autenticado
+  if (!isSignedIn) {
     if (showRegister) {
       return (
         <>
           <StatusBar style="dark" />
           <RegisterScreen
-            onRegister={() => { setShowRegister(false); setIsLoggedIn(true); }}
             onBack={() => setShowRegister(false)}
           />
         </>
@@ -85,26 +100,26 @@ function AppInner() {
       <>
         <StatusBar style="dark" />
         <LoginScreen
-          onLogin={() => setIsLoggedIn(true)}
           onRegister={() => setShowRegister(true)}
-          onGoogleLogin={() => setIsLoggedIn(true)}
         />
       </>
     );
   }
 
+  // Perfil
   if (showProfile) {
     return (
       <>
         <StatusBar style="dark" />
         <ProfileScreen
           onBack={() => setShowProfile(false)}
-          onLogout={() => { setShowProfile(false); setIsLoggedIn(false); }}
+          onLogout={() => setShowProfile(false)}
         />
       </>
     );
   }
 
+  // App principal
   const renderScreen = () => {
     switch (activeTab) {
       case 'home':     return <HomeScreen onAvatarPress={() => setShowProfile(true)} />;
@@ -125,23 +140,30 @@ function AppInner() {
   );
 }
 
-// ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <AppInner />
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+      <ClerkLoaded>
+        <SafeAreaProvider>
+          <ThemeProvider>
+            <AppInner />
+          </ThemeProvider>
+        </SafeAreaProvider>
+      </ClerkLoaded>
+    </ClerkProvider>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
   content: { flex: 1 },
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   tabBar: {
     flexDirection: 'row',
@@ -169,7 +191,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.sm,
   },
-  placeholderIcon: { fontSize: 40 },
   placeholderTitle: {
     fontSize: typography.xl,
     fontWeight: typography.bold,

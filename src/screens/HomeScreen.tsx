@@ -12,11 +12,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth, useUser } from '@clerk/expo';          // ← Clerk
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import { listarTareas, actualizarTarea, eliminarTarea, crearTarea, type Tarea } from '../services/taskService';
 import { listarNotificaciones } from '../services/notificationsService';
-import { getAccessToken, getStoredUser } from '../store/authStore';
 import NewTaskModal, { NuevaTarea } from '../components/NewTaskModal';
 import NotificationsModal from '../components/NotificationsModal';
 
@@ -62,7 +62,7 @@ function TaskCard({ task, onToggle, onDelete }: {
           )}
           {task.due_at && (
             <Text style={[styles.taskDate, { color: theme.textTertiary }]}>
-              ⏰ {new Date(task.due_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              {new Date(task.due_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
             </Text>
           )}
         </View>
@@ -97,56 +97,49 @@ export default function HomeScreen({ onAvatarPress }: Props) {
   const { theme } = useTheme();
   const shadows = makeShadows(theme.shadowColor);
 
+  const { getToken } = useAuth();
+  const { user } = useUser();
+
+  // Nombre e inicial vienen directamente de Clerk (no del authStore)
+  const nombre = user?.firstName ?? user?.emailAddresses?.[0]?.emailAddress?.split('@')[0] ?? '';
+  const inicial = nombre[0]?.toUpperCase() ?? '?';
+
   const [filter, setFilter] = useState<'todas' | 'pendiente' | 'completada'>('todas');
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [nombre, setNombre] = useState('');
-  const [inicial, setInicial] = useState('?');
   const [modalVisible, setModalVisible] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
   const [notificaciones, setNotificaciones] = useState(0);
 
   const today = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
 
-  useEffect(() => {
-    getStoredUser().then(user => {
-      if (user?.nombre) {
-        const firstName = user.nombre.split(' ')[0];
-        setNombre(firstName);
-        setInicial(firstName[0]?.toUpperCase() ?? '?');
-      } else if (user?.email) {
-        const name = user.email.split('@')[0];
-        setNombre(name);
-        setInicial(name[0]?.toUpperCase() ?? '?');
-      }
-    });
-  }, []);
 
   const cargarTareas = useCallback(async () => {
     try {
       setError(null);
-      const token = await getAccessToken();
+      const token = await getToken();
+      console.log("TOKEN DE CLERK:", token);
       if (!token) throw new Error('No hay sesión activa');
-      const data = await listarTareas(token);
+      const data = await listarTareas(`Bearer ${token}`);
       setTareas(data);
     } catch (err: any) {
       setError(err.message || 'Error al cargar tareas');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getToken]);
 
   const cargarNotificacionesSinLeer = useCallback(async () => {
     try {
-      const token = await getAccessToken();
+      const token = await getToken();
       if (!token) return;
-      const data = await listarNotificaciones(token);
+      const data = await listarNotificaciones(`Bearer ${token}`);
       setNotificaciones(data.filter(n => !n.leida).length);
     } catch {
       setNotificaciones(0);
     }
-  }, []);
+  }, [getToken]);
 
   useEffect(() => {
     cargarTareas();
@@ -175,18 +168,18 @@ export default function HomeScreen({ onAvatarPress }: Props) {
 
   const handleToggle = async (tarea: Tarea) => {
     try {
-      const token = await getAccessToken();
+      const token = await getToken();
       if (!token) return;
-      const actualizada = await actualizarTarea(token, tarea.id_tarea, { completada: !tarea.completada });
+      const actualizada = await actualizarTarea(`Bearer ${token}`, tarea.id_tarea, { completada: !tarea.completada });
       setTareas(prev => prev.map(t => t.id_tarea === actualizada.id_tarea ? actualizada : t));
     } catch (err: any) { Alert.alert('Error', err.message); }
   };
 
   const handleDelete = async (id: string) => {
     try {
-      const token = await getAccessToken();
+      const token = await getToken();
       if (!token) return;
-      await eliminarTarea(token, id);
+      await eliminarTarea(`Bearer ${token}`, id);
       setTareas(prev => prev.filter(t => t.id_tarea !== id));
     } catch (err: any) { Alert.alert('Error', err.message); }
   };
@@ -353,9 +346,9 @@ export default function HomeScreen({ onAvatarPress }: Props) {
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
         onSave={async (nueva: NuevaTarea) => {
-          const token = await getAccessToken();
+          const token = await getToken();
           if (!token) throw new Error('No hay sesión activa');
-          const creada = await crearTarea(token, nueva);
+          const creada = await crearTarea(`Bearer ${token}`, nueva);
           setTareas(prev => [creada, ...prev]);
           setModalVisible(false);
         }}
