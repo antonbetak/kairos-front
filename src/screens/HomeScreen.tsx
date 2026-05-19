@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth, useUser } from '@clerk/expo';          // ← Clerk
+import { useAuth, useUser } from '@clerk/expo';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import { listarTareas, actualizarTarea, eliminarTarea, crearTarea, type Tarea } from '../services/taskService';

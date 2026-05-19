@@ -16,8 +16,7 @@ import { Image } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import ThemePicker from '../components/ThemePicker';
-import { getMe } from '../services/authService';
-import { getAccessToken, clearSession } from '../store/authStore';
+import { useAuth, useUser } from '@clerk/expo';
 
 
 interface UserProfile {
@@ -239,6 +238,10 @@ export default function ProfileScreen({ onLogout, onBack }: Props) {
   const { theme } = useTheme();
   const shadows = makeShadows(theme.shadowColor);
 
+  // ── Clerk ──
+  const { signOut } = useAuth();
+  const { user } = useUser();
+
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -248,25 +251,26 @@ export default function ProfileScreen({ onLogout, onBack }: Props) {
   const update = (fields: Partial<UserProfile>) =>
     setProfile(p => ({ ...p, ...fields }));
 
-  // ── Cargar usuario real ──
+  // ── Cargar usuario desde Clerk ──
   const cargarPerfil = useCallback(async () => {
     try {
-      const token = await getAccessToken();
-      if (!token) return;
-      const user = await getMe(token);
+      const nombre = user?.firstName ?? user?.emailAddresses?.[0]?.emailAddress?.split('@')[0] ?? '';
+      const email = user?.emailAddresses?.[0]?.emailAddress ?? '';
+      const fotoUrl = user?.imageUrl ?? undefined;
+      const authProvider = user?.externalAccounts?.length ? 'google' : 'email';
       const loaded: UserProfile = {
         ...DEFAULT_PROFILE,
-        nombre: user.nombre,
-        email: user.email,
+        nombre,
+        email,
+        fotoUrl,
+        authProvider,
       };
       setProfile(loaded);
       originalRef.current = loaded;
-    } catch (err: any) {
-      Alert.alert('Error', 'No se pudo cargar tu perfil');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     cargarPerfil();
@@ -337,7 +341,8 @@ export default function ProfileScreen({ onLogout, onBack }: Props) {
         text: 'Cerrar sesión',
         style: 'destructive',
         onPress: async () => {
-          await clearSession();
+          await signOut();
+          // App.tsx detecta isSignedIn = false automáticamente
           onLogout?.();
         },
       },
