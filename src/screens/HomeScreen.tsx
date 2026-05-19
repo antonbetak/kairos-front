@@ -11,6 +11,7 @@ import {
   AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth, useUser } from '@clerk/expo';
 import { useTheme } from '../context/ThemeContext';
@@ -119,7 +120,6 @@ export default function HomeScreen({ onAvatarPress }: Props) {
     try {
       setError(null);
       const token = await getToken();
-      console.log("TOKEN DE CLERK:", token);
       if (!token) throw new Error('No hay sesión activa');
       const data = await listarTareas(`Bearer ${token}`);
       setTareas(data);
@@ -244,7 +244,14 @@ export default function HomeScreen({ onAvatarPress }: Props) {
               onPress={onAvatarPress}
               activeOpacity={0.8}
             >
-              <Text style={[styles.avatarText, { color: theme.primary }]}>{inicial}</Text>
+              {user?.imageUrl ? (
+                <Image
+                  source={{ uri: user.imageUrl }}
+                  style={styles.avatarImage}
+                />
+              ) : (
+                <Text style={[styles.avatarText, { color: theme.primary }]}>{inicial}</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -395,7 +402,8 @@ const styles = StyleSheet.create({
   },
   notifBadgeText: { fontSize: 9, fontWeight: typography.bold },
 
-  avatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarImage: { width: 42, height: 42, borderRadius: 21 },
   avatarText: { fontSize: typography.lg, fontWeight: typography.bold },
 
   progressSection: { marginBottom: spacing.xl },
