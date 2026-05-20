@@ -117,11 +117,13 @@ export default function HomeScreen({ onAvatarPress }: Props) {
 
 
   const cargarTareas = useCallback(async () => {
+    const token = await getToken();
+    console.log("TOKEN:", token);
     try {
       setError(null);
       const token = await getToken();
       if (!token) throw new Error('No hay sesión activa');
-      const data = await listarTareas(`Bearer ${token}`);
+      const data = await listarTareas(token);
       setTareas(data);
     } catch (err: any) {
       setError(err.message || 'Error al cargar tareas');
@@ -134,7 +136,7 @@ export default function HomeScreen({ onAvatarPress }: Props) {
     try {
       const token = await getToken();
       if (!token) return;
-      const data = await listarNotificaciones(`Bearer ${token}`);
+      const data = await listarNotificaciones(token);
       setNotificaciones(data.filter(n => !n.leida).length);
     } catch {
       setNotificaciones(0);
@@ -170,7 +172,7 @@ export default function HomeScreen({ onAvatarPress }: Props) {
     try {
       const token = await getToken();
       if (!token) return;
-      const actualizada = await actualizarTarea(`Bearer ${token}`, tarea.id_tarea, { completada: !tarea.completada });
+      const actualizada = await actualizarTarea(token, tarea.id_tarea, { completada: !tarea.completada });
       setTareas(prev => prev.map(t => t.id_tarea === actualizada.id_tarea ? actualizada : t));
     } catch (err: any) { Alert.alert('Error', err.message); }
   };
@@ -179,7 +181,7 @@ export default function HomeScreen({ onAvatarPress }: Props) {
     try {
       const token = await getToken();
       if (!token) return;
-      await eliminarTarea(`Bearer ${token}`, id);
+      await eliminarTarea(token, id);
       setTareas(prev => prev.filter(t => t.id_tarea !== id));
     } catch (err: any) { Alert.alert('Error', err.message); }
   };
@@ -355,7 +357,7 @@ export default function HomeScreen({ onAvatarPress }: Props) {
         onSave={async (nueva: NuevaTarea) => {
           const token = await getToken();
           if (!token) throw new Error('No hay sesión activa');
-          const creada = await crearTarea(`Bearer ${token}`, nueva);
+          const creada = await crearTarea(token, nueva);
           setTareas(prev => [creada, ...prev]);
           setModalVisible(false);
         }}

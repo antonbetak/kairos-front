@@ -12,7 +12,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii } from '../styles/theme';
 import { listarTareas, type Tarea } from '../services/taskService';
-import { getAccessToken } from '../store/authStore';
+import { generarHorario, type BloqueAgente } from '../services/agentService';
+import { useAuth, useUser } from '@clerk/expo';
 
 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -117,6 +118,8 @@ function TimelineBlock({ block }: { block: ScheduleBlock }) {
 
 export default function ScheduleScreen() {
   const { theme } = useTheme();
+  const { getToken } = useAuth();
+  const { user } = useUser();
   const [selectedDay, setSelectedDay] = useState(adjustedToday);
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,7 +130,7 @@ export default function ScheduleScreen() {
   const cargarTareas = useCallback(async () => {
     try {
       setError(null);
-      const token = await getAccessToken();
+      const token = await getToken();
       if (!token) throw new Error('No hay sesión activa');
       const data = await listarTareas(token);
       setTareas(data);
@@ -136,13 +139,55 @@ export default function ScheduleScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getToken]);
 
   useEffect(() => { cargarTareas(); }, [cargarTareas]);
 
-  const bloques = bloquesDelDia(tareas, selectedDay);
-  const completadas = bloques.filter(b => b.estado === 'completada').length;
-  const pendientes = bloques.filter(b => b.estado === 'pendiente').length;
+  const handleGenerar = async () => {
+    setGenerating(true);
+    try {
+      const token = await getToken();
+      const userId = user?.id;
+      if (!token || !userId) throw new Error('No hay sesión activa');
+
+      const hoy = new Date();
+      const dow = hoy.getDay();
+      const adjustedDow = dow === 0 ? 6 : dow - 1;
+      const diff = selectedDay - adjustedDow;
+      const fecha = new Date(hoy);
+      fecha.setDate(hoy.getDate() + diff);
+
+      const response = await generarHorario(token, userId, fecha, tareas);
+
+      if (response.bloques.length === 0) {
+        Alert.alert(
+          'Sin bloques generados',
+          'El agente necesita más historial de uso para generar un horario personalizado. Completa algunas tareas primero.',
+        );
+        return;
+      }
+
+      const bloques = response.bloques.map((b, i) => agenteToBlock(b, i));
+      setBloquesAgente(bloques);
+
+      if (response.es_fallback) {
+        Alert.alert('Horario generado', 'Usamos un horario base porque aún no hay suficiente historial. Con el uso se irá personalizando.');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'No se pudo generar el horario');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const bloquesDelDiaActual = bloquesDelDia(tareas, selectedDay);
+  const todosBloques = [...bloquesDelDiaActual, ...bloquesAgente.filter(b => {
+    // Solo mostrar bloques del agente que correspondan al día seleccionado
+    return true; // ya filtramos por fecha al generar
+  })];
+
+  const completadas = todosBloques.filter(b => b.estado === 'completada').length;
+  const pendientes = todosBloques.filter(b => b.estado === 'pendiente').length;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']}>

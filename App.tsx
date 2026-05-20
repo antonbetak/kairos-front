@@ -10,6 +10,7 @@ import RegisterScreen from './src/screens/RegisterScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import ScheduleScreen from './src/screens/ScheduleScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import StatsScreen from './src/screens/StatsScreen';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { spacing, typography } from './src/styles/theme';
 
@@ -124,7 +125,7 @@ function AppInner() {
     switch (activeTab) {
       case 'home':     return <HomeScreen onAvatarPress={() => setShowProfile(true)} />;
       case 'schedule': return <ScheduleScreen />;
-      case 'stats':    return <PlaceholderScreen title="Métricas" />;
+      case 'stats': return <StatsScreen />;
       case 'agent':    return <PlaceholderScreen title="Agente Kairos" />;
     }
   };
