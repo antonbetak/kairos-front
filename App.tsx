@@ -21,13 +21,13 @@ if (!publishableKey) {
 }
 
 
-type Tab = 'home' | 'schedule' | 'stats' | 'agent';
+type Tab = 'home' | 'schedule' | 'stats' | 'community';
 
 const TABS: Array<{ key: Tab; icon: string; label: string }> = [
   { key: 'home',     icon: '⬡', label: 'Inicio' },
   { key: 'schedule', icon: '◷', label: 'Horario' },
   { key: 'stats',    icon: '◈', label: 'Métricas' },
-  { key: 'agent',    icon: '✦', label: 'Agente' },
+  { key: 'community',    icon: '✦', label: 'Comunidad' },
 ];
 
 function TabBar({ active, onPress }: { active: Tab; onPress: (t: Tab) => void }) {
@@ -126,7 +126,7 @@ function AppInner() {
       case 'home':     return <HomeScreen onAvatarPress={() => setShowProfile(true)} />;
       case 'schedule': return <ScheduleScreen />;
       case 'stats': return <StatsScreen />;
-      case 'agent':    return <PlaceholderScreen title="Agente Kairos" />;
+      case 'community':    return <PlaceholderScreen title="Comunidad" />;
     }
   };
 
