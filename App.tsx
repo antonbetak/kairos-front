@@ -11,6 +11,7 @@ import HomeScreen from './src/screens/HomeScreen';
 import ScheduleScreen from './src/screens/ScheduleScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import StatsScreen from './src/screens/StatsScreen';
+import FitnessScreen from './src/screens/FitnessScreen';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { spacing, typography } from './src/styles/theme';
 
@@ -20,14 +21,14 @@ if (!publishableKey) {
   throw new Error('Falta EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY en el archivo .env');
 }
 
-
-type Tab = 'home' | 'schedule' | 'stats' | 'community';
+type Tab = 'home' | 'schedule' | 'stats' | 'fitness' | 'community';
 
 const TABS: Array<{ key: Tab; icon: string; label: string }> = [
-  { key: 'home',     icon: '⬡', label: 'Inicio' },
-  { key: 'schedule', icon: '◷', label: 'Horario' },
-  { key: 'stats',    icon: '◈', label: 'Métricas' },
-  { key: 'community',    icon: '✦', label: 'Comunidad' },
+  { key: 'home',      icon: '⬡', label: 'Inicio' },
+  { key: 'schedule',  icon: '◷', label: 'Horario' },
+  { key: 'stats',     icon: '◈', label: 'Stats' },
+  { key: 'fitness',   icon: '♡', label: 'Fitness' },
+  { key: 'community', icon: '✦', label: 'Comunidad' },
 ];
 
 function TabBar({ active, onPress }: { active: Tab; onPress: (t: Tab) => void }) {
@@ -67,16 +68,13 @@ function PlaceholderScreen({ title }: { title: string }) {
   );
 }
 
-
 function AppInner() {
   const { theme } = useTheme();
-  // isSignedIn de Clerk reemplaza el useState(false) de isLoggedIn
   const { isSignedIn, isLoaded } = useAuth();
   const [showRegister, setShowRegister] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('home');
 
-  // Clerk cargando la sesión guardada en expo-secure-store
   if (!isLoaded) {
     return (
       <View style={[styles.loading, { backgroundColor: theme.bg }]}>
@@ -85,29 +83,23 @@ function AppInner() {
     );
   }
 
-  // No autenticado
   if (!isSignedIn) {
     if (showRegister) {
       return (
         <>
           <StatusBar style="dark" />
-          <RegisterScreen
-            onBack={() => setShowRegister(false)}
-          />
+          <RegisterScreen onBack={() => setShowRegister(false)} />
         </>
       );
     }
     return (
       <>
         <StatusBar style="dark" />
-        <LoginScreen
-          onRegister={() => setShowRegister(true)}
-        />
+        <LoginScreen onRegister={() => setShowRegister(true)} />
       </>
     );
   }
 
-  // Perfil
   if (showProfile) {
     return (
       <>
@@ -120,13 +112,13 @@ function AppInner() {
     );
   }
 
-  // App principal
   const renderScreen = () => {
     switch (activeTab) {
-      case 'home':     return <HomeScreen onAvatarPress={() => setShowProfile(true)} />;
-      case 'schedule': return <ScheduleScreen />;
-      case 'stats': return <StatsScreen />;
-      case 'community':    return <PlaceholderScreen title="Comunidad" />;
+      case 'home':      return <HomeScreen onAvatarPress={() => setShowProfile(true)} />;
+      case 'schedule':  return <ScheduleScreen />;
+      case 'stats':     return <StatsScreen />;
+      case 'fitness':   return <FitnessScreen />;
+      case 'community': return <PlaceholderScreen title="Comunidad" />;
     }
   };
 
@@ -140,7 +132,6 @@ function AppInner() {
     </>
   );
 }
-
 
 export default function App() {
   return (
@@ -156,15 +147,10 @@ export default function App() {
   );
 }
 
-
 const styles = StyleSheet.create({
   root: { flex: 1 },
   content: { flex: 1 },
-  loading: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   tabBar: {
     flexDirection: 'row',
@@ -172,29 +158,12 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
     paddingTop: spacing.sm,
   },
-  tabItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 2,
-  },
+  tabItem: { flex: 1, alignItems: 'center', gap: 2 },
   tabIcon: { fontSize: 20 },
-  tabLabel: {
-    fontSize: typography.xs,
-    fontWeight: typography.medium,
-  },
-  tabLabelActive: {
-    fontWeight: typography.semibold,
-  },
+  tabLabel: { fontSize: typography.xs, fontWeight: typography.medium },
+  tabLabelActive: { fontWeight: typography.semibold },
 
-  placeholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  placeholderTitle: {
-    fontSize: typography.xl,
-    fontWeight: typography.bold,
-  },
+  placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  placeholderTitle: { fontSize: typography.xl, fontWeight: typography.bold },
   placeholderSub: { fontSize: typography.sm },
 });
