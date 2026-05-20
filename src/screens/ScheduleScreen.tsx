@@ -10,19 +10,11 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii } from '../styles/theme';
 import { listarTareas, type Tarea } from '../services/taskService';
-import {
-  generarHorario,
-  listarBloques,
-  aceptarBloque,
-  rechazarBloque,
-  type BloqueHorario,
-} from '../services/scheduleService';
-import { useUser } from '@clerk/expo';
-import { useKairosToken } from '../hooks/useKairosToken';
+import { generarHorario, type BloqueAgente } from '../services/agentService';
+import { getAccessToken, getStoredUser } from '../store/authStore';
 
 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -34,39 +26,16 @@ const HOUR_HEIGHT = 60 * PX_PER_MIN;
 const START_HOUR = 6;
 const HOUR_COL = 52;
 
-
 function timeToMinutes(time: string): number {
   const [h, m] = time.split(':').map(Number);
   return h * 60 + m;
 }
 
-function fechaToHora(fecha: string): string {
-  const d = new Date(fecha);
-  const h = d.getHours();
-  const m = d.getMinutes();
-  return `${h < 10 ? '0' : ''}${h}:${m < 10 ? '0' : ''}${m}`;
-}
-
-function fechaToDayIndex(fecha: string): number {
-  const d = new Date(fecha);
-  const dow = d.getDay();
-  return dow === 0 ? 6 : dow - 1;
-}
-
-function formatFechaParam(dayIndex: number): string {
-  const today = new Date();
-  const diff = dayIndex - adjustedToday;
-  const target = new Date(today);
-  target.setDate(today.getDate() + diff);
-  return target.toISOString().split('T')[0];
-}
-
-
 interface ScheduleBlock {
   id: string;
   titulo: string;
   tipo: 'tarea' | 'habito' | 'evento' | 'libre';
-  estado: 'pendiente' | 'completada' | 'propuesto';
+  estado: 'pendiente' | 'completada';
   horaInicio: string;
   horaFin: string;
   durationMin: number;
@@ -99,18 +68,22 @@ function tareaToBlock(tarea: Tarea): ScheduleBlock | null {
   };
 }
 
-function apiToBlock(bloque: BloqueHorario): ScheduleBlock {
-  const horaInicio = fechaToHora(bloque.fecha_inicio);
-  const horaFin = fechaToHora(bloque.fecha_fin);
-  const ini = new Date(bloque.fecha_inicio);
+function agenteToBlock(bloque: BloqueAgente, index: number): ScheduleBlock {
+  const inicio = new Date(bloque.fecha_inicio);
   const fin = new Date(bloque.fecha_fin);
-  const durationMin = Math.round((fin.getTime() - ini.getTime()) / 60000);
+  const h = inicio.getHours();
+  const m = inicio.getMinutes();
+  const horaInicio = `${h < 10 ? '0' : ''}${h}:${m < 10 ? '0' : ''}${m}`;
+  const hf = fin.getHours();
+  const mf = fin.getMinutes();
+  const horaFin = `${hf < 10 ? '0' : ''}${hf}:${mf < 10 ? '0' : ''}${mf}`;
+  const durationMin = Math.max((fin.getTime() - inicio.getTime()) / 60000, 15);
 
   return {
-    id: bloque.id,
+    id: `agente-${index}`,
     titulo: bloque.titulo,
     tipo: bloque.tipo,
-    estado: bloque.estado,
+    estado: 'pendiente',
     horaInicio,
     horaFin,
     durationMin,
@@ -133,13 +106,7 @@ function bloquesDelDia(tareas: Tarea[], dayIndex: number): ScheduleBlock[] {
 }
 
 
-interface TimelineBlockProps {
-  block: ScheduleBlock;
-  onAceptar?: (id: string) => void;
-  onRechazar?: (id: string) => void;
-}
-
-function TimelineBlock({ block, onAceptar, onRechazar }: TimelineBlockProps) {
+function TimelineBlock({ block }: { block: ScheduleBlock }) {
   const { theme } = useTheme();
 
   const tipoAccent: Record<string, string> = {
@@ -149,43 +116,18 @@ function TimelineBlock({ block, onAceptar, onRechazar }: TimelineBlockProps) {
     libre:  theme.textTertiary,
   };
 
-  const isPropuesto = block.estado === 'propuesto';
-
   const blockColors = {
-    pendiente:  {
-      bg: block.fuente === 'agente' ? theme.primaryMuted : theme.surfaceElevated,
-      border: block.fuente === 'agente' ? theme.primary + '40' : theme.border,
-      text: block.fuente === 'agente' ? theme.primary : theme.textSecondary,
-    },
-    completada: {
-      bg: theme.successMuted,
-      border: theme.success + '50',
-      text: theme.success,
-    },
-    propuesto: {
-      bg: theme.primaryMuted + 'AA',
-      border: theme.primary + '60',
-      text: theme.primary,
-    },
+    pendiente:  { bg: block.fuente === 'agente' ? theme.primaryMuted : theme.surfaceElevated, border: block.fuente === 'agente' ? theme.primary + '40' : theme.border, text: block.fuente === 'agente' ? theme.primary : theme.textSecondary },
+    completada: { bg: theme.successMuted, border: theme.success + '50', text: theme.success },
   };
 
   const top = (timeToMinutes(block.horaInicio) - START_HOUR * 60) * PX_PER_MIN;
-  const height = Math.max(block.durationMin * PX_PER_MIN, isPropuesto ? 64 : 36);
+  const height = Math.max(block.durationMin * PX_PER_MIN, 36);
   const scheme = blockColors[block.estado];
 
   return (
     <TouchableOpacity
-      style={[
-        styles.block,
-        {
-          top,
-          height,
-          borderColor: scheme.border,
-          backgroundColor: scheme.bg,
-          borderStyle: isPropuesto ? 'dashed' : 'solid',
-          borderWidth: isPropuesto ? 1.5 : 1,
-        },
-      ]}
+      style={[styles.block, { top, height, borderColor: scheme.border, backgroundColor: scheme.bg }]}
       activeOpacity={0.8}
       onPress={() => {
         if (block.razon) Alert.alert(block.titulo, block.razon);
@@ -193,36 +135,13 @@ function TimelineBlock({ block, onAceptar, onRechazar }: TimelineBlockProps) {
     >
       <View style={[styles.blockAccent, { backgroundColor: tipoAccent[block.tipo] ?? theme.textTertiary }]} />
       <View style={styles.blockContent}>
-        <Text
-          style={[styles.blockTitle, { color: scheme.text }, height < 48 && styles.blockTitleSm]}
-          numberOfLines={1}
-        >
+        <Text style={[styles.blockTitle, { color: scheme.text }, height < 48 && styles.blockTitleSm]} numberOfLines={1}>
           {block.titulo}
         </Text>
         {height >= 48 && (
           <Text style={[styles.blockTime, { color: theme.textTertiary }]}>
             {block.horaInicio} – {block.horaFin}
           </Text>
-        )}
-
-        {/* Botones aceptar / rechazar solo en propuesto */}
-        {isPropuesto && onAceptar && onRechazar && (
-          <View style={styles.propuestoBtns}>
-            <TouchableOpacity
-              style={[styles.propuestoBtn, { backgroundColor: theme.success + '22', borderColor: theme.success + '60' }]}
-              onPress={() => onAceptar(block.id)}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="checkmark" size={14} color={theme.success} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.propuestoBtn, { backgroundColor: theme.error + '22', borderColor: theme.error + '60' }]}
-              onPress={() => onRechazar(block.id)}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="close" size={14} color={theme.error} />
-            </TouchableOpacity>
-          </View>
         )}
       </View>
     </TouchableOpacity>
@@ -232,9 +151,6 @@ function TimelineBlock({ block, onAceptar, onRechazar }: TimelineBlockProps) {
 
 export default function ScheduleScreen() {
   const { theme } = useTheme();
-  const { kairosToken } = useKairosToken();
-  const { user } = useUser();
-
   const [selectedDay, setSelectedDay] = useState(adjustedToday);
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [bloquesAgente, setBloquesAgente] = useState<ScheduleBlock[]>([]);
@@ -247,86 +163,65 @@ export default function ScheduleScreen() {
   const cargarTareas = useCallback(async () => {
     try {
       setError(null);
-      if (!kairosToken) throw new Error('No hay sesión activa');
-      const data = await listarTareas(kairosToken);
+      const token = await getAccessToken();
+      if (!token) throw new Error('No hay sesión activa');
+      const data = await listarTareas(token);
       setTareas(data);
     } catch (err: any) {
       setError(err.message || 'Error al cargar tareas');
     } finally {
       setLoading(false);
     }
-  }, [kairosToken]);
-
-  const cargarBloquesAgente = useCallback(async (dayIndex: number) => {
-    try {
-      if (!kairosToken) return;
-      const fecha = formatFechaParam(dayIndex);
-      const data = await listarBloques(kairosToken, fecha);
-      setBloquesAgente(data.map(apiToBlock));
-    } catch {
-      setBloquesAgente([]);
-    }
-  }, [kairosToken]);
+  }, []);
 
   useEffect(() => { cargarTareas(); }, [cargarTareas]);
-  useEffect(() => { cargarBloquesAgente(selectedDay); }, [selectedDay, cargarBloquesAgente]);
 
   const handleGenerar = async () => {
-    if (!kairosToken) return;
+    setGenerating(true);
     try {
-      setGenerating(true);
-      const fecha = formatFechaParam(selectedDay);
-      const data = await generarHorario(kairosToken, fecha);
-      setBloquesAgente(data.map(apiToBlock));
+      const token = await getAccessToken();
+      const user = await getStoredUser();
+      if (!token || !user) throw new Error('No hay sesión activa');
+
+      // Fecha del día seleccionado esta semana
+      const hoy = new Date();
+      const dow = hoy.getDay();
+      const adjustedDow = dow === 0 ? 6 : dow - 1;
+      const diff = selectedDay - adjustedDow;
+      const fecha = new Date(hoy);
+      fecha.setDate(hoy.getDate() + diff);
+
+      const response = await generarHorario(token, user.id_usuario, fecha, tareas);
+
+      if (response.bloques.length === 0) {
+        Alert.alert(
+          'Sin bloques generados',
+          'El agente necesita más historial de uso para generar un horario personalizado. Completa algunas tareas primero.',
+        );
+        return;
+      }
+
+      const bloques = response.bloques.map((b, i) => agenteToBlock(b, i));
+      setBloquesAgente(bloques);
+
+      if (response.es_fallback) {
+        Alert.alert('Horario generado', 'Usamos un horario base porque aún no hay suficiente historial. Con el uso se irá personalizando.');
+      }
     } catch (err: any) {
-      Alert.alert('Error', 'No se pudo generar el horario. Intenta de nuevo.');
+      Alert.alert('Error', err.message || 'No se pudo generar el horario');
     } finally {
       setGenerating(false);
     }
   };
 
-  const handleAceptar = async (id: string) => {
-    if (!kairosToken) return;
-    try {
-      const actualizado = await aceptarBloque(kairosToken, id);
-      setBloquesAgente(prev =>
-        prev.map(b => b.id === id ? { ...b, estado: 'pendiente' as const } : b)
-      );
-    } catch {
-      Alert.alert('Error', 'No se pudo aceptar el bloque.');
-    }
-  };
-
-  const handleRechazar = async (id: string) => {
-    if (!kairosToken) return;
-    try {
-      await rechazarBloque(kairosToken, id);
-      setBloquesAgente(prev => prev.filter(b => b.id !== id));
-    } catch {
-      Alert.alert('Error', 'No se pudo rechazar el bloque.');
-    }
-  };
-
-  const handleAceptarTodos = async () => {
-    if (!kairosToken) return;
-    const propuestos = bloquesAgente.filter(b => b.estado === 'propuesto');
-    try {
-      await Promise.all(propuestos.map(b => aceptarBloque(kairosToken, b.id)));
-      setBloquesAgente(prev =>
-        prev.map(b => b.estado === 'propuesto' ? { ...b, estado: 'pendiente' as const } : b)
-      );
-    } catch {
-      Alert.alert('Error', 'No se pudieron aceptar todos los bloques.');
-    }
-  };
-
   const bloquesDelDiaActual = bloquesDelDia(tareas, selectedDay);
-  const todosLosBloques = [...bloquesDelDiaActual, ...bloquesAgente];
-  const hayPropuestos = bloquesAgente.some(b => b.estado === 'propuesto');
+  const todosBloques = [...bloquesDelDiaActual, ...bloquesAgente.filter(b => {
+    // Solo mostrar bloques del agente que correspondan al día seleccionado
+    return true; // ya filtramos por fecha al generar
+  })];
 
-  const completadas = todosLosBloques.filter(b => b.estado === 'completada').length;
-  const pendientes = todosLosBloques.filter(b => b.estado === 'pendiente').length;
-  const propuestos = todosLosBloques.filter(b => b.estado === 'propuesto').length;
+  const completadas = todosBloques.filter(b => b.estado === 'completada').length;
+  const pendientes = todosBloques.filter(b => b.estado === 'pendiente').length;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']}>
@@ -335,33 +230,22 @@ export default function ScheduleScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Horario</Text>
-        <View style={styles.headerRight}>
-          {hayPropuestos && (
-            <TouchableOpacity
-              style={[styles.aceptarTodosBtn, { borderColor: theme.success + '60', backgroundColor: theme.success + '15' }]}
-              onPress={handleAceptarTodos}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="checkmark-done" size={14} color={theme.success} />
-              <Text style={[styles.aceptarTodosBtnText, { color: theme.success }]}>Aceptar todos</Text>
-            </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.generateBtn,
+            { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '50' },
+            generating && { opacity: 0.7 },
+          ]}
+          onPress={handleGenerar}
+          disabled={generating}
+          activeOpacity={0.8}
+        >
+          {generating ? (
+            <ActivityIndicator size="small" color={theme.primary} />
+          ) : (
+            <Text style={[styles.generateBtnText, { color: theme.primary }]}>✦ Generar</Text>
           )}
-          <TouchableOpacity
-            style={[styles.generateBtn, { borderColor: theme.primary + '60', backgroundColor: theme.primaryMuted }]}
-            onPress={handleGenerar}
-            disabled={generating}
-            activeOpacity={0.8}
-          >
-            {generating ? (
-              <ActivityIndicator size="small" color={theme.primary} />
-            ) : (
-              <Ionicons name="sparkles-outline" size={14} color={theme.primary} />
-            )}
-            <Text style={[styles.generateBtnText, { color: theme.primary }]}>
-              {generating ? 'Generando…' : 'Generar'}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
       </View>
 
       {/* Day selector */}
@@ -384,7 +268,7 @@ export default function ScheduleScreen() {
               {d}
             </Text>
             {i === adjustedToday && (
-              <View style={[styles.todayDot, { backgroundColor: selectedDay === i ? theme.primary : theme.textTertiary }]} />
+              <View style={[styles.todayDot, { backgroundColor: theme.primary }]} />
             )}
           </TouchableOpacity>
         ))}
@@ -394,23 +278,30 @@ export default function ScheduleScreen() {
       <View style={styles.summaryStrip}>
         <View style={styles.summaryItem}>
           <View style={[styles.summaryDot, { backgroundColor: theme.success }]} />
-          <Text style={[styles.summaryText, { color: theme.textSecondary }]}>{completadas} completadas</Text>
+          <Text style={[styles.summaryText, { color: theme.textTertiary }]}>{completadas} completada{completadas !== 1 ? 's' : ''}</Text>
         </View>
         <View style={styles.summaryItem}>
-          <View style={[styles.summaryDot, { backgroundColor: theme.secondary }]} />
-          <Text style={[styles.summaryText, { color: theme.textSecondary }]}>{pendientes} pendientes</Text>
+          <View style={[styles.summaryDot, { backgroundColor: theme.textTertiary }]} />
+          <Text style={[styles.summaryText, { color: theme.textTertiary }]}>{pendientes} pendiente{pendientes !== 1 ? 's' : ''}</Text>
         </View>
-        {propuestos > 0 && (
+        {bloquesAgente.length > 0 && (
           <View style={styles.summaryItem}>
             <View style={[styles.summaryDot, { backgroundColor: theme.primary }]} />
-            <Text style={[styles.summaryText, { color: theme.primary }]}>{propuestos} propuestos</Text>
+            <Text style={[styles.summaryText, { color: theme.textTertiary }]}>{bloquesAgente.length} del agente</Text>
           </View>
         )}
       </View>
 
       {/* Timeline */}
       {loading ? (
-        <ActivityIndicator style={{ flex: 1 }} color={theme.primary} />
+        <ActivityIndicator color={theme.primary} style={{ marginTop: spacing.xl }} />
+      ) : error ? (
+        <View style={styles.errorBox}>
+          <Text style={[styles.errorText, { color: theme.error }]}>{error}</Text>
+          <TouchableOpacity onPress={cargarTareas}>
+            <Text style={[styles.retryText, { color: theme.primary }]}>Reintentar</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
         <ScrollView style={styles.timeline} showsVerticalScrollIndicator={false} contentContainerStyle={styles.timelineContent}>
           {HOURS.map(h => (
@@ -423,19 +314,12 @@ export default function ScheduleScreen() {
           ))}
 
           <View style={[styles.blocksColumn, { height: HOURS.length * HOUR_HEIGHT }]}>
-            {todosLosBloques.length === 0 ? (
+            {todosBloques.length === 0 ? (
               <Text style={[styles.emptyText, { color: theme.textTertiary }]}>
-                Sin actividades para este día
+                Sin actividades para este día — toca ✦ Generar
               </Text>
             ) : (
-              todosLosBloques.map(block => (
-                <TimelineBlock
-                  key={block.id}
-                  block={block}
-                  onAceptar={block.estado === 'propuesto' ? handleAceptar : undefined}
-                  onRechazar={block.estado === 'propuesto' ? handleRechazar : undefined}
-                />
-              ))
+              todosBloques.map(block => <TimelineBlock key={block.id} block={block} />)
             )}
 
             {selectedDay === adjustedToday && (
@@ -462,8 +346,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base, paddingTop: spacing.md, paddingBottom: spacing.base,
   },
   headerTitle: { fontSize: typography.xxl, fontWeight: typography.bold },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-
   generateBtn: {
     paddingHorizontal: spacing.md, paddingVertical: spacing.xs,
     borderRadius: radii.full, borderWidth: 1,
@@ -471,13 +353,6 @@ const styles = StyleSheet.create({
     minWidth: 100, justifyContent: 'center',
   },
   generateBtnText: { fontSize: typography.sm, fontWeight: typography.semibold, letterSpacing: 0.3 },
-
-  aceptarTodosBtn: {
-    paddingHorizontal: spacing.sm, paddingVertical: spacing.xs,
-    borderRadius: radii.full, borderWidth: 1,
-    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
-  },
-  aceptarTodosBtnText: { fontSize: typography.xs, fontWeight: typography.semibold },
 
   daySelector: { flexDirection: 'row', paddingHorizontal: spacing.base, gap: spacing.xs, marginBottom: spacing.base },
   dayTab: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm, borderRadius: radii.md, borderWidth: 1 },
@@ -494,31 +369,23 @@ const styles = StyleSheet.create({
   timelineContent: { position: 'relative', paddingBottom: spacing.xxl },
 
   hourRow: { position: 'absolute', left: 0, right: 0, flexDirection: 'row', alignItems: 'center', height: HOUR_HEIGHT },
-  hourLabel: { width: HOUR_COL, fontSize: typography.xs, textAlign: 'right', paddingRight: spacing.sm },
-  hourLine: { flex: 1, height: StyleSheet.hairlineWidth },
+  hourLabel: { width: HOUR_COL, fontSize: typography.xs, textAlign: 'right', paddingRight: spacing.md },
+  hourLine: { flex: 1, height: 1, marginRight: spacing.base },
 
-  blocksColumn: { position: 'absolute', left: HOUR_COL + spacing.sm, right: spacing.base },
-
-  block: {
-    position: 'absolute', left: 0, right: 0,
-    borderRadius: radii.md, borderWidth: 1,
-    flexDirection: 'row', overflow: 'hidden',
-  },
-  blockAccent: { width: 3, borderRadius: 2 },
-  blockContent: { flex: 1, paddingHorizontal: spacing.xs, paddingVertical: 4, justifyContent: 'center' },
+  blocksColumn: { position: 'relative', marginLeft: HOUR_COL + spacing.md, marginRight: spacing.base },
+  block: { position: 'absolute', left: 0, right: 0, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', overflow: 'hidden' },
+  blockAccent: { width: 3 },
+  blockContent: { flex: 1, padding: spacing.sm, justifyContent: 'center' },
   blockTitle: { fontSize: typography.sm, fontWeight: typography.semibold },
   blockTitleSm: { fontSize: typography.xs },
-  blockTime: { fontSize: typography.xs, marginTop: 1 },
+  blockTime: { fontSize: typography.xs, marginTop: 2 },
 
-  propuestoBtns: { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.xs },
-  propuestoBtn: {
-    width: 24, height: 24, borderRadius: radii.sm, borderWidth: 1,
-    alignItems: 'center', justifyContent: 'center',
-  },
-
-  emptyText: { position: 'absolute', top: 80, alignSelf: 'center', fontSize: typography.sm },
-
-  nowLine: { position: 'absolute', left: -spacing.sm, right: 0, flexDirection: 'row', alignItems: 'center' },
+  nowLine: { position: 'absolute', left: 0, right: 0, flexDirection: 'row', alignItems: 'center', zIndex: 10 },
   nowDot: { width: 8, height: 8, borderRadius: 4 },
-  nowBar: { flex: 1, height: 1.5 },
+  nowBar: { flex: 1, height: 1, opacity: 0.6 },
+
+  errorBox: { alignItems: 'center', marginTop: spacing.xl, gap: spacing.sm },
+  errorText: { fontSize: typography.sm, textAlign: 'center' },
+  retryText: { fontSize: typography.sm, fontWeight: typography.semibold },
+  emptyText: { textAlign: 'center', marginTop: spacing.xl, fontSize: typography.sm },
 });
