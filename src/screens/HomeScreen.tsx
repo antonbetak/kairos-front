@@ -11,9 +11,10 @@ import {
   AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth, useUser } from '@clerk/expo';
+import { useUser } from '@clerk/expo';
+import { useKairosToken } from '../hooks/useKairosToken';
+import { Image } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import { listarTareas, actualizarTarea, eliminarTarea, crearTarea, type Tarea } from '../services/taskService';
@@ -98,7 +99,7 @@ export default function HomeScreen({ onAvatarPress }: Props) {
   const { theme } = useTheme();
   const shadows = makeShadows(theme.shadowColor);
 
-  const { getToken } = useAuth();
+  const { kairosToken } = useKairosToken();
   const { user } = useUser();
 
   // Nombre e inicial vienen directamente de Clerk (no del authStore)
@@ -117,31 +118,27 @@ export default function HomeScreen({ onAvatarPress }: Props) {
 
 
   const cargarTareas = useCallback(async () => {
-    const token = await getToken();
-    console.log("TOKEN:", token);
     try {
       setError(null);
-      const token = await getToken();
-      if (!token) throw new Error('No hay sesión activa');
-      const data = await listarTareas(token);
+      if (!kairosToken) throw new Error('No hay sesión activa');
+      const data = await listarTareas(kairosToken);
       setTareas(data);
     } catch (err: any) {
       setError(err.message || 'Error al cargar tareas');
     } finally {
       setLoading(false);
     }
-  }, [getToken]);
+  }, [kairosToken]);
 
   const cargarNotificacionesSinLeer = useCallback(async () => {
     try {
-      const token = await getToken();
-      if (!token) return;
-      const data = await listarNotificaciones(token);
+      if (!kairosToken) return;
+      const data = await listarNotificaciones(kairosToken);
       setNotificaciones(data.filter(n => !n.leida).length);
     } catch {
       setNotificaciones(0);
     }
-  }, [getToken]);
+  }, [kairosToken]);
 
   useEffect(() => {
     cargarTareas();
@@ -170,18 +167,16 @@ export default function HomeScreen({ onAvatarPress }: Props) {
 
   const handleToggle = async (tarea: Tarea) => {
     try {
-      const token = await getToken();
-      if (!token) return;
-      const actualizada = await actualizarTarea(token, tarea.id_tarea, { completada: !tarea.completada });
+      if (!kairosToken) return;
+      const actualizada = await actualizarTarea(kairosToken, tarea.id_tarea, { completada: !tarea.completada });
       setTareas(prev => prev.map(t => t.id_tarea === actualizada.id_tarea ? actualizada : t));
     } catch (err: any) { Alert.alert('Error', err.message); }
   };
 
   const handleDelete = async (id: string) => {
     try {
-      const token = await getToken();
-      if (!token) return;
-      await eliminarTarea(token, id);
+      if (!kairosToken) return;
+      await eliminarTarea(kairosToken, id);
       setTareas(prev => prev.filter(t => t.id_tarea !== id));
     } catch (err: any) { Alert.alert('Error', err.message); }
   };
@@ -246,14 +241,7 @@ export default function HomeScreen({ onAvatarPress }: Props) {
               onPress={onAvatarPress}
               activeOpacity={0.8}
             >
-              {user?.imageUrl ? (
-                <Image
-                  source={{ uri: user.imageUrl }}
-                  style={styles.avatarImage}
-                />
-              ) : (
-                <Text style={[styles.avatarText, { color: theme.primary }]}>{inicial}</Text>
-              )}
+              <Text style={[styles.avatarText, { color: theme.primary }]}>{inicial}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -355,9 +343,8 @@ export default function HomeScreen({ onAvatarPress }: Props) {
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
         onSave={async (nueva: NuevaTarea) => {
-          const token = await getToken();
-          if (!token) throw new Error('No hay sesión activa');
-          const creada = await crearTarea(token, nueva);
+          if (!kairosToken) throw new Error('No hay sesión activa');
+          const creada = await crearTarea(kairosToken, nueva);
           setTareas(prev => [creada, ...prev]);
           setModalVisible(false);
         }}
@@ -404,8 +391,7 @@ const styles = StyleSheet.create({
   },
   notifBadgeText: { fontSize: 9, fontWeight: typography.bold },
 
-  avatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  avatarImage: { width: 42, height: 42, borderRadius: 21 },
+  avatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: typography.lg, fontWeight: typography.bold },
 
   progressSection: { marginBottom: spacing.xl },

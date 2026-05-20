@@ -52,3 +52,11 @@ export async function refreshToken(refresh_token: string): Promise<LoginResponse
     body: { refresh_token },
   });
 }
+
+// Intercambia el token de Clerk por un token interno de Kairos
+export async function exchangeClerkToken(clerkToken: string): Promise<LoginResponse> {
+  return apiRequest<LoginResponse>('/auth/clerk/exchange', {
+    method: 'POST',
+    body: { clerk_token: clerkToken },
+  });
+}
