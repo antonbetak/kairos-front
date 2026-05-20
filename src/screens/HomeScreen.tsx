@@ -9,12 +9,12 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '@clerk/expo';
 import { useKairosToken } from '../hooks/useKairosToken';
-import { Image } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import { listarTareas, actualizarTarea, eliminarTarea, crearTarea, type Tarea } from '../services/taskService';
@@ -51,7 +51,7 @@ function TaskCard({ task, onToggle, onDelete }: {
           name={task.completada ? 'checkmark-circle' : 'square-outline'}
           size={18}
           color={task.completada ? theme.success : theme.textSecondary}
-          style={styles.taskIcon}
+          style={styles.taskIconStyle}
         />
         <View style={styles.taskInfo}>
           <Text style={[styles.taskTitle, { color: theme.textPrimary }, task.completada && { textDecorationLine: 'line-through', color: theme.textTertiary }]}>
@@ -76,6 +76,7 @@ function TaskCard({ task, onToggle, onDelete }: {
   );
 }
 
+// ─── StatCard ─────────────────────────────────────────────────────────────────
 
 function StatCard({ value, label, sublabel, accentColor, bgColor, borderColor }: {
   value: string; label: string; sublabel?: string;
@@ -102,9 +103,10 @@ export default function HomeScreen({ onAvatarPress }: Props) {
   const { kairosToken } = useKairosToken();
   const { user } = useUser();
 
-  // Nombre e inicial vienen directamente de Clerk (no del authStore)
+  // Datos del usuario desde Clerk
   const nombre = user?.firstName ?? user?.emailAddresses?.[0]?.emailAddress?.split('@')[0] ?? '';
   const inicial = nombre[0]?.toUpperCase() ?? '?';
+  const fotoUrl = user?.imageUrl ?? null;
 
   const [filter, setFilter] = useState<'todas' | 'pendiente' | 'completada'>('todas');
   const [tareas, setTareas] = useState<Tarea[]>([]);
@@ -115,7 +117,6 @@ export default function HomeScreen({ onAvatarPress }: Props) {
   const [notificaciones, setNotificaciones] = useState(0);
 
   const today = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
-
 
   const cargarTareas = useCallback(async () => {
     try {
@@ -146,16 +147,12 @@ export default function HomeScreen({ onAvatarPress }: Props) {
   }, [cargarTareas, cargarNotificacionesSinLeer]);
 
   useEffect(() => {
-    if (showNotifs) {
-      cargarNotificacionesSinLeer();
-    }
+    if (showNotifs) cargarNotificacionesSinLeer();
   }, [showNotifs, cargarNotificacionesSinLeer]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextState => {
-      if (nextState === 'active') {
-        cargarNotificacionesSinLeer();
-      }
+      if (nextState === 'active') cargarNotificacionesSinLeer();
     });
     return () => subscription.remove();
   }, [cargarNotificacionesSinLeer]);
@@ -237,11 +234,17 @@ export default function HomeScreen({ onAvatarPress }: Props) {
 
             {/* Avatar */}
             <TouchableOpacity
-              style={[styles.avatar, { backgroundColor: theme.primaryMuted, borderColor: theme.primary }]}
+              style={[styles.avatar, { borderColor: theme.primary }]}
               onPress={onAvatarPress}
               activeOpacity={0.8}
             >
-              <Text style={[styles.avatarText, { color: theme.primary }]}>{inicial}</Text>
+              {fotoUrl ? (
+                <Image source={{ uri: fotoUrl }} style={styles.avatarImage} />
+              ) : (
+                <View style={[styles.avatarInner, { backgroundColor: theme.primaryMuted }]}>
+                  <Text style={[styles.avatarText, { color: theme.primary }]}>{inicial}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -391,7 +394,9 @@ const styles = StyleSheet.create({
   },
   notifBadgeText: { fontSize: 9, fontWeight: typography.bold },
 
-  avatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, overflow: 'hidden' },
+  avatarImage: { width: '100%', height: '100%' },
+  avatarInner: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: typography.lg, fontWeight: typography.bold },
 
   progressSection: { marginBottom: spacing.xl },
@@ -418,7 +423,7 @@ const styles = StyleSheet.create({
   taskCardDone: { opacity: 0.55 },
   taskCardLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
   prioDot: { width: 6, height: 6, borderRadius: 3 },
-  taskIcon: { fontSize: 16 },
+  taskIconStyle: { marginRight: 2 },
   taskInfo: { flex: 1 },
   taskTitle: { fontSize: typography.base, fontWeight: typography.medium },
   taskDate: { fontSize: typography.xs, marginTop: 2 },
@@ -431,5 +436,4 @@ const styles = StyleSheet.create({
   emptyText: { textAlign: 'center', marginTop: spacing.xl, fontSize: typography.sm },
 
   fab: { position: 'absolute', bottom: 80, right: spacing.xl, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
-  fabText: { fontSize: 28, fontWeight: typography.light, lineHeight: 32 },
 });
