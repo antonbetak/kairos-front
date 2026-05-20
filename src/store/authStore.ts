@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const TOKEN_KEY = 'kairos_access_token';
 const REFRESH_KEY = 'kairos_refresh_token';
 const USER_KEY = 'kairos_user';
+const CLERK_KEY = 'kairos_clerk_token';
 
 export interface StoredUser {
   id_usuario: string;
@@ -34,5 +35,13 @@ export async function getStoredUser(): Promise<StoredUser | null> {
 }
 
 export async function clearSession(): Promise<void> {
-  await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_KEY, USER_KEY]);
+  await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_KEY, USER_KEY, CLERK_KEY]);
+}
+
+export async function saveClerkToken(token: string): Promise<void> {
+  await AsyncStorage.setItem(CLERK_KEY, token);
+}
+
+export async function getClerkToken(): Promise<string | null> {
+  return AsyncStorage.getItem(CLERK_KEY);
 }

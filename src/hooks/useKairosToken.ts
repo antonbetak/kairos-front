@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@clerk/expo';
 import { exchangeClerkToken } from '../services/authService';
-import { saveSession, getAccessToken, clearSession } from '../store/authStore';
+import { saveSession, clearSession, saveClerkToken } from '../store/authStore';
 
 export function useKairosToken() {
   const { getToken, isSignedIn } = useAuth();
@@ -18,9 +18,10 @@ export function useKairosToken() {
 
     const exchange = async () => {
       try {
-        // Siempre pide un token de Clerk fresco (dura 60s pero getToken lo renueva)
         const clerkToken = await getToken();
         if (!clerkToken) throw new Error('No hay sesión de Clerk');
+
+        await saveClerkToken(clerkToken);
 
         const response = await exchangeClerkToken(clerkToken);
 

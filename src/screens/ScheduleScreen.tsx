@@ -10,6 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuth } from '@clerk/expo';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii } from '../styles/theme';
 import { listarTareas, type Tarea } from '../services/taskService';
@@ -21,6 +22,7 @@ import {
   type ScheduleBlock,
   type ScheduleAgentBlock,
 } from '../services/scheduleService';
+import { listarEventos, type EventItem } from '../services/calendarService';
 import { getAccessToken, getStoredUser } from '../store/authStore';
 
 
@@ -33,16 +35,21 @@ const HOUR_HEIGHT = 60 * PX_PER_MIN;
 const START_HOUR = 6;
 const HOUR_COL = 52;
 
-function timeToMinutes(iso: string): number {
-  const d = new Date(iso);
-  return d.getHours() * 60 + d.getMinutes();
-}
-
 function extractHHMM(iso: string): string {
   const d = new Date(iso);
   const h = d.getHours();
   const m = d.getMinutes();
   return `${h < 10 ? '0' : ''}${h}:${m < 10 ? '0' : ''}${m}`;
+}
+
+function getDateForDayIndex(dayIndex: number): Date {
+  const hoy = new Date();
+  const dow = hoy.getDay();
+  const adjustedDow = dow === 0 ? 6 : dow - 1;
+  const diff = dayIndex - adjustedDow;
+  const fecha = new Date(hoy);
+  fecha.setDate(hoy.getDate() + diff);
+  return fecha;
 }
 
 
@@ -55,7 +62,7 @@ interface DisplayBlock {
   horaFin: string;
   durationMin: number;
   razon?: string | null;
-  fuente: 'tarea' | 'schedule' | 'agente';
+  fuente: 'tarea' | 'schedule' | 'agente' | 'google';
   raw?: ScheduleAgentBlock;
 }
 
@@ -87,7 +94,7 @@ function scheduleToDisplay(b: ScheduleBlock): DisplayBlock {
   return {
     id: b.id,
     titulo: b.titulo,
-    tipo: b.tipo,
+    tipo: b.tipo ?? 'libre',
     estado: b.status,
     horaInicio: extractHHMM(b.fecha_inicio),
     horaFin: extractHHMM(b.fecha_fin),
@@ -104,7 +111,7 @@ function agenteToDisplay(b: ScheduleAgentBlock): DisplayBlock {
   return {
     id: b.id,
     titulo: b.titulo,
-    tipo: b.tipo,
+    tipo: b.tipo ?? 'libre',
     estado: b.estado,
     horaInicio: extractHHMM(b.fecha_inicio),
     horaFin: extractHHMM(b.fecha_fin),
@@ -115,22 +122,29 @@ function agenteToDisplay(b: ScheduleAgentBlock): DisplayBlock {
   };
 }
 
-function getDateForDayIndex(dayIndex: number): Date {
-  const hoy = new Date();
-  const dow = hoy.getDay();
-  const adjustedDow = dow === 0 ? 6 : dow - 1;
-  const diff = dayIndex - adjustedDow;
-  const fecha = new Date(hoy);
-  fecha.setDate(hoy.getDate() + diff);
-  return fecha;
-}
+function googleToDisplay(e: EventItem): DisplayBlock | null {
+  const startStr = e.start.dateTime ?? e.start.date;
+  const endStr = e.end.dateTime ?? e.end.date;
+  if (!startStr || !endStr) return null;
 
-function bloquesDelDia(items: DisplayBlock[], dayIndex: number): DisplayBlock[] {
-  return items.filter(b => {
-    const fecha = getDateForDayIndex(dayIndex);
-    // Para tareas usamos due_at, para schedule/agente usamos horaInicio como referencia del día
-    return true; // ya están filtrados al cargar
-  });
+  const start = new Date(startStr);
+  const end = new Date(endStr);
+  const h = start.getHours();
+  if (h < START_HOUR || h >= START_HOUR + 16) return null;
+
+  const durationMin = Math.max((end.getTime() - start.getTime()) / 60000, 15);
+
+  return {
+    id: `gcal-${e.id}`,
+    titulo: e.summary,
+    tipo: 'evento',
+    estado: 'google',
+    horaInicio: extractHHMM(startStr),
+    horaFin: extractHHMM(endStr),
+    durationMin,
+    razon: e.description ?? null,
+    fuente: 'google',
+  };
 }
 
 
@@ -146,31 +160,27 @@ function TimelineBlock({
   const { theme } = useTheme();
 
   const tipoAccent: Record<string, string> = {
-    tarea: theme.secondary,
+    tarea:  theme.secondary,
     habito: theme.success,
     evento: theme.primary,
-    libre: theme.textTertiary,
+    libre:  theme.textTertiary,
+    google: '#4285F4',
   };
 
   const fuenteColors = {
     tarea:    { bg: theme.surfaceElevated, border: theme.border,         text: theme.textSecondary },
     schedule: { bg: theme.successMuted,    border: theme.success + '50', text: theme.success },
     agente:   { bg: theme.primaryMuted,    border: theme.primary + '40', text: theme.primary },
+    google:   { bg: '#4285F420',           border: '#4285F450',          text: '#4285F4' },
   };
 
-  const top = (timeToMinutes(
-    block.fuente === 'tarea'
-      ? `1970-01-01T${block.horaInicio}:00`
-      : `1970-01-01T${block.horaInicio}:00`
-  ) - START_HOUR * 60) * PX_PER_MIN;
-
-  const topPx = ((() => {
+  const topPx = (() => {
     const [h, m] = block.horaInicio.split(':').map(Number);
     return (h * 60 + m - START_HOUR * 60) * PX_PER_MIN;
-  })());
+  })();
 
   const height = Math.max(block.durationMin * PX_PER_MIN, 36);
-  const scheme = fuenteColors[block.fuente];
+  const scheme = fuenteColors[block.fuente] ?? fuenteColors.tarea;
   const esAgente = block.fuente === 'agente';
 
   return (
@@ -178,7 +188,9 @@ function TimelineBlock({
       style={[styles.block, { top: topPx, height, borderColor: scheme.border, backgroundColor: scheme.bg }]}
       activeOpacity={0.8}
       onPress={() => {
-        if (block.razon) Alert.alert(block.titulo, block.razon);
+        if (block.razon || block.fuente === 'google') {
+          Alert.alert(block.titulo, block.razon ?? `${block.horaInicio} – ${block.horaFin}`);
+        }
       }}
     >
       <View style={[styles.blockAccent, { backgroundColor: tipoAccent[block.tipo] ?? theme.textTertiary }]} />
@@ -217,10 +229,13 @@ function TimelineBlock({
 
 export default function ScheduleScreen() {
   const { theme } = useTheme();
+  const { getToken, isSignedIn } = useAuth();
+
   const [selectedDay, setSelectedDay] = useState(adjustedToday);
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [bloques, setBloques] = useState<ScheduleBlock[]>([]);
   const [bloquesAgente, setBloquesAgente] = useState<ScheduleAgentBlock[]>([]);
+  const [eventosGoogle, setEventosGoogle] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -232,18 +247,36 @@ export default function ScheduleScreen() {
       setError(null);
       const token = await getAccessToken();
       if (!token) throw new Error('No hay sesión activa');
+
       const [tar, bloq] = await Promise.all([
         listarTareas(token),
         listarBloques(token),
       ]);
       setTareas(tar);
       setBloques(bloq);
+
+      // Cargar eventos de Google Calendar si el usuario tiene sesión con Google
+      if (isSignedIn) {
+        try {
+          const clerkToken = await getToken();
+          if (clerkToken) {
+            const hoy = new Date();
+            const timeMin = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 3).toISOString();
+            const timeMax = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 7).toISOString();
+            const eventos = await listarEventos(clerkToken, { timeMin, timeMax, maxResults: 50 });
+            setEventosGoogle(eventos.items ?? []);
+          }
+        } catch {
+          // Si falla Google Calendar, no bloqueamos el resto
+          setEventosGoogle([]);
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'Error al cargar');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isSignedIn]);
 
   useEffect(() => { cargarDatos(); }, [cargarDatos]);
 
@@ -251,8 +284,7 @@ export default function ScheduleScreen() {
     setGenerating(true);
     try {
       const token = await getAccessToken();
-      const user = await getStoredUser();
-      if (!token || !user) throw new Error('No hay sesión activa');
+      if (!token) throw new Error('No hay sesión activa');
 
       const fecha = getDateForDayIndex(selectedDay);
       const fechaStr = fecha.toISOString().split('T')[0];
@@ -260,10 +292,7 @@ export default function ScheduleScreen() {
       const response = await generarHorario(token, fechaStr);
 
       if (!response.bloques || response.bloques.length === 0) {
-        Alert.alert(
-          'Sin bloques generados',
-          'El agente necesita más historial para generar un horario personalizado. Completa algunas tareas primero.',
-        );
+        Alert.alert('Sin bloques generados', 'El agente necesita más historial. Completa algunas tareas primero.');
         return;
       }
 
@@ -319,10 +348,20 @@ export default function ScheduleScreen() {
     .filter(b => new Date(b.fecha_inicio).toDateString() === fechaDiaStr)
     .map(agenteToDisplay);
 
-  const todosBloques = [...tareasDisplay, ...bloquesDisplay, ...agenteDisplay];
+  const googleDisplay: DisplayBlock[] = eventosGoogle
+    .filter(e => {
+      const startStr = e.start.dateTime ?? e.start.date;
+      if (!startStr) return false;
+      return new Date(startStr).toDateString() === fechaDiaStr;
+    })
+    .map(googleToDisplay)
+    .filter((b): b is DisplayBlock => b !== null);
+
+  const todosBloques = [...tareasDisplay, ...bloquesDisplay, ...agenteDisplay, ...googleDisplay];
   const completados = todosBloques.filter(b => b.estado === 'completed' || b.estado === 'completada').length;
   const pendientes = todosBloques.filter(b => b.estado === 'pendiente' || b.estado === 'planned').length;
   const propuestos = agenteDisplay.length;
+  const googleCount = googleDisplay.length;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']}>
@@ -332,11 +371,7 @@ export default function ScheduleScreen() {
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Horario</Text>
         <TouchableOpacity
-          style={[
-            styles.generateBtn,
-            { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '50' },
-            generating && { opacity: 0.7 },
-          ]}
+          style={[styles.generateBtn, { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '50' }, generating && { opacity: 0.7 }]}
           onPress={handleGenerar}
           disabled={generating}
           activeOpacity={0.8}
@@ -353,23 +388,13 @@ export default function ScheduleScreen() {
         {DAYS.map((d, i) => (
           <TouchableOpacity
             key={d}
-            style={[
-              styles.dayTab,
-              { backgroundColor: theme.surface, borderColor: theme.border },
-              selectedDay === i && { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '50' },
-            ]}
+            style={[styles.dayTab, { backgroundColor: theme.surface, borderColor: theme.border }, selectedDay === i && { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '50' }]}
             onPress={() => setSelectedDay(i)}
           >
-            <Text style={[
-              styles.dayLabel,
-              { color: selectedDay === i ? theme.primary : theme.textSecondary },
-              selectedDay === i && styles.dayLabelActive,
-            ]}>
+            <Text style={[styles.dayLabel, { color: selectedDay === i ? theme.primary : theme.textSecondary }, selectedDay === i && styles.dayLabelActive]}>
               {d}
             </Text>
-            {i === adjustedToday && (
-              <View style={[styles.todayDot, { backgroundColor: theme.primary }]} />
-            )}
+            {i === adjustedToday && <View style={[styles.todayDot, { backgroundColor: theme.primary }]} />}
           </TouchableOpacity>
         ))}
       </View>
@@ -378,7 +403,7 @@ export default function ScheduleScreen() {
       <View style={styles.summaryStrip}>
         <View style={styles.summaryItem}>
           <View style={[styles.summaryDot, { backgroundColor: theme.success }]} />
-          <Text style={[styles.summaryText, { color: theme.textTertiary }]}>{completados} completado{completados !== 1 ? 's' : ''}</Text>
+          <Text style={[styles.summaryText, { color: theme.textTertiary }]}>{completados} hecho{completados !== 1 ? 's' : ''}</Text>
         </View>
         <View style={styles.summaryItem}>
           <View style={[styles.summaryDot, { backgroundColor: theme.textTertiary }]} />
@@ -388,6 +413,12 @@ export default function ScheduleScreen() {
           <View style={styles.summaryItem}>
             <View style={[styles.summaryDot, { backgroundColor: theme.primary }]} />
             <Text style={[styles.summaryText, { color: theme.textTertiary }]}>{propuestos} propuesto{propuestos !== 1 ? 's' : ''}</Text>
+          </View>
+        )}
+        {googleCount > 0 && (
+          <View style={styles.summaryItem}>
+            <View style={[styles.summaryDot, { backgroundColor: '#4285F4' }]} />
+            <Text style={[styles.summaryText, { color: theme.textTertiary }]}>{googleCount} Google</Text>
           </View>
         )}
       </View>
@@ -406,39 +437,27 @@ export default function ScheduleScreen() {
         <ScrollView style={styles.timeline} showsVerticalScrollIndicator={false} contentContainerStyle={styles.timelineContent}>
           {HOURS.map(h => (
             <View key={h} style={[styles.hourRow, { top: (h - START_HOUR) * HOUR_HEIGHT }]}>
-              <Text style={[styles.hourLabel, { color: theme.textTertiary }]}>
-                {h < 10 ? `0${h}` : h}:00
-              </Text>
+              <Text style={[styles.hourLabel, { color: theme.textTertiary }]}>{h < 10 ? `0${h}` : h}:00</Text>
               <View style={[styles.hourLine, { backgroundColor: theme.borderSubtle }]} />
             </View>
           ))}
 
           <View style={[styles.blocksColumn, { height: HOURS.length * HOUR_HEIGHT }]}>
             {todosBloques.length === 0 ? (
-              <Text style={[styles.emptyText, { color: theme.textTertiary }]}>
-                Sin actividades — toca ✦ Generar
-              </Text>
+              <Text style={[styles.emptyText, { color: theme.textTertiary }]}>Sin actividades — toca ✦ Generar</Text>
             ) : (
               todosBloques.map(block => (
                 <TimelineBlock
                   key={block.id}
                   block={block}
-                  onAceptar={block.fuente === 'agente' && block.raw
-                    ? () => handleAceptar(block.raw!)
-                    : undefined
-                  }
-                  onRechazar={block.fuente === 'agente' && block.raw
-                    ? () => handleRechazar(block.raw!)
-                    : undefined
-                  }
+                  onAceptar={block.fuente === 'agente' && block.raw ? () => handleAceptar(block.raw!) : undefined}
+                  onRechazar={block.fuente === 'agente' && block.raw ? () => handleRechazar(block.raw!) : undefined}
                 />
               ))
             )}
 
             {selectedDay === adjustedToday && (
-              <View style={[styles.nowLine, {
-                top: (new Date().getHours() * 60 + new Date().getMinutes() - START_HOUR * 60) * PX_PER_MIN,
-              }]}>
+              <View style={[styles.nowLine, { top: (new Date().getHours() * 60 + new Date().getMinutes() - START_HOUR * 60) * PX_PER_MIN }]}>
                 <View style={[styles.nowDot, { backgroundColor: theme.error }]} />
                 <View style={[styles.nowBar, { backgroundColor: theme.error }]} />
               </View>
@@ -454,16 +473,9 @@ export default function ScheduleScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
-  header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: spacing.base, paddingTop: spacing.md, paddingBottom: spacing.base,
-  },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.base, paddingTop: spacing.md, paddingBottom: spacing.base },
   headerTitle: { fontSize: typography.xxl, fontWeight: typography.bold },
-  generateBtn: {
-    paddingHorizontal: spacing.md, paddingVertical: spacing.xs,
-    borderRadius: radii.full, borderWidth: 1,
-    minWidth: 100, alignItems: 'center', justifyContent: 'center',
-  },
+  generateBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radii.full, borderWidth: 1, minWidth: 100, alignItems: 'center', justifyContent: 'center' },
   generateBtnText: { fontSize: typography.sm, fontWeight: typography.semibold, letterSpacing: 0.3 },
 
   daySelector: { flexDirection: 'row', paddingHorizontal: spacing.base, gap: spacing.xs, marginBottom: spacing.base },
