@@ -9,6 +9,22 @@ export interface StoredUser {
   id_usuario: string;
   nombre: string;
   email: string;
+  rol: string | null;
+}
+
+export function getRolFromToken(token: string): string | null {
+  try {
+    const payloadPart = token.split('.')[1];
+    if (!payloadPart) return null;
+
+    const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    const padding = '='.repeat((4 - (normalized.length % 4)) % 4);
+    const payload = JSON.parse(atob(normalized + padding));
+
+    return payload.rol ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function saveSession(

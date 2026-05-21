@@ -60,3 +60,10 @@ export async function exchangeClerkToken(clerkToken: string): Promise<LoginRespo
     body: { clerk_token: clerkToken },
   });
 }
+
+export async function logout(token: string): Promise<void> {
+  await apiRequest<void>('/auth/logout', {
+    method: 'POST',
+    token,
+  });
+}

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, TouchableOpacity, Text, StyleSheet, ActivityIndicator, Animated, LayoutChangeEvent } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -14,8 +14,12 @@ import ProfileScreen from './src/screens/ProfileScreen';
 import StatsScreen from './src/screens/StatsScreen';
 import FitnessScreen from './src/screens/FitnessScreen';
 import CommunityScreen from './src/screens/CommunityScreen';
+import AdminScreen from './src/screens/AdminScreen';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { spacing, typography } from './src/styles/theme';
+import { useKairosToken } from './src/hooks/useKairosToken';
+import { clearSession, getRolFromToken, getStoredUser, type StoredUser } from './src/store/authStore';
+import { logout as logoutKairos } from './src/services/authService';
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
 
@@ -110,32 +114,113 @@ function PlaceholderScreen({ title }: { title: string }) {
 
 function AppInner() {
   const { theme } = useTheme();
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded, signOut } = useAuth();
+  const { kairosToken, loading: kairosTokenLoading } = useKairosToken();
   const [showRegister, setShowRegister] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('home');
+  const [sessionUser, setSessionUser] = useState<StoredUser | null>(null);
+  const [localSessionToken, setLocalSessionToken] = useState<string | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
   const authEntry = useRef(new Animated.Value(0)).current;
   const screenEntry = useRef(new Animated.Value(0)).current;
 
+  const activeSessionToken = localSessionToken ?? kairosToken;
+  const isAppAuthenticated = isSignedIn || Boolean(activeSessionToken);
+  const sessionRole = sessionUser?.rol ?? (activeSessionToken ? getRolFromToken(activeSessionToken) : null);
+  const isAdmin = sessionRole === 'admin';
+
+  const handleLogout = useCallback(async () => {
+    const tokenToLogout = localSessionToken ?? kairosToken;
+
+    try {
+      if (tokenToLogout) {
+        await logoutKairos(tokenToLogout);
+      }
+    } catch (error) {
+      console.warn('[App] Logout falló en backend:', error);
+    }
+
+    await clearSession();
+    if (isSignedIn) {
+      await signOut();
+    }
+
+    setSessionUser(null);
+    setLocalSessionToken(null);
+    setSessionReady(false);
+    setShowRegister(false);
+    setShowProfile(false);
+    setActiveTab('home');
+  }, [isSignedIn, kairosToken, localSessionToken, signOut]);
+
   useEffect(() => {
-    if (!isLoaded || isSignedIn) return;
+    if (!isLoaded || isAppAuthenticated) return;
     authEntry.setValue(0);
     Animated.timing(authEntry, {
       toValue: 1,
       duration: 420,
       useNativeDriver: true,
     }).start();
-  }, [authEntry, isLoaded, isSignedIn, showRegister]);
+  }, [authEntry, isAppAuthenticated, isLoaded, showRegister]);
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn || showProfile) return;
+    if (!isLoaded || !isAppAuthenticated || showProfile) return;
     screenEntry.setValue(0);
     Animated.timing(screenEntry, {
       toValue: 1,
       duration: 280,
       useNativeDriver: true,
     }).start();
-  }, [activeTab, isLoaded, isSignedIn, screenEntry, showProfile]);
+  }, [activeTab, isAppAuthenticated, isLoaded, screenEntry, showProfile]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!isAppAuthenticated) {
+      setSessionUser(null);
+      setSessionReady(false);
+      setShowRegister(false);
+      setShowProfile(false);
+      setActiveTab('home');
+      return () => {};
+    }
+
+    if (kairosTokenLoading && !localSessionToken) {
+      setSessionReady(false);
+      return () => {};
+    }
+
+    const hydrateSession = async () => {
+      try {
+        const storedUser = await getStoredUser();
+        if (cancelled) return;
+        setSessionUser(storedUser);
+      } finally {
+        if (!cancelled) {
+          setSessionReady(true);
+        }
+      }
+    };
+
+    hydrateSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignedIn, kairosTokenLoading, kairosToken]);
+
+  useEffect(() => {
+    if (!sessionReady || !isAppAuthenticated) return;
+    if (isAdmin) {
+      setShowProfile(false);
+      return;
+    }
+
+    if (showProfile) {
+      setActiveTab('home');
+    }
+  }, [activeTab, isAdmin, isAppAuthenticated, sessionReady, showProfile]);
 
   if (!isLoaded) {
     return (
@@ -145,7 +230,15 @@ function AppInner() {
     );
   }
 
-  if (!isSignedIn) {
+  if (isAppAuthenticated && (!sessionReady || (kairosTokenLoading && !localSessionToken))) {
+    return (
+      <View style={[styles.loading, { backgroundColor: theme.bg }]}> 
+        <ActivityIndicator color={theme.primary} />
+      </View>
+    );
+  }
+
+  if (!isAppAuthenticated) {
     if (showRegister) {
       return (
         <>
@@ -172,8 +265,34 @@ function AppInner() {
             transform: [{ translateY: authEntry.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }],
           },
         ]}>
-          <LoginScreen onRegister={() => setShowRegister(true)} />
+          <LoginScreen
+            onRegister={() => setShowRegister(true)}
+            onLoginSuccess={({ token, user }) => {
+              setLocalSessionToken(token);
+              setSessionUser(user);
+              setSessionReady(true);
+              setShowRegister(false);
+              setShowProfile(false);
+              setActiveTab('home');
+            }}
+          />
         </Animated.View>
+      </>
+    );
+  }
+
+  if (isAdmin) {
+    return (
+      <>
+        <StatusBar style="dark" />
+        <AdminScreen
+          role={sessionRole}
+          onFallbackHome={() => {
+            setShowProfile(false);
+            setActiveTab('home');
+          }}
+          onLogout={handleLogout}
+        />
       </>
     );
   }
@@ -184,7 +303,7 @@ function AppInner() {
         <StatusBar style="dark" />
         <ProfileScreen
           onBack={() => setShowProfile(false)}
-          onLogout={() => setShowProfile(false)}
+          onLogout={handleLogout}
         />
       </>
     );

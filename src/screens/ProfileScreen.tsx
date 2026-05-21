@@ -16,7 +16,7 @@ import { Image } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import ThemePicker from '../components/ThemePicker';
-import { useAuth, useUser } from '@clerk/expo';
+import { useUser } from '@clerk/expo';
 
 
 interface UserProfile {
@@ -230,7 +230,7 @@ function TimeRow({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 interface Props {
-  onLogout?: () => void;
+  onLogout?: () => void | Promise<void>;
   onBack?: () => void;
 }
 
@@ -238,8 +238,6 @@ export default function ProfileScreen({ onLogout, onBack }: Props) {
   const { theme } = useTheme();
   const shadows = makeShadows(theme.shadowColor);
 
-  // ── Clerk ──
-  const { signOut } = useAuth();
   const { user } = useUser();
 
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
@@ -340,11 +338,7 @@ export default function ProfileScreen({ onLogout, onBack }: Props) {
       {
         text: 'Cerrar sesión',
         style: 'destructive',
-        onPress: async () => {
-          await signOut();
-          // App.tsx detecta isSignedIn = false automáticamente
-          onLogout?.();
-        },
+        onPress: () => { void onLogout?.(); },
       },
     ]);
   };

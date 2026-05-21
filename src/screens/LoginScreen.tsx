@@ -13,24 +13,26 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
-import { useSignIn, useOAuth } from '@clerk/expo';
+import { useOAuth } from '@clerk/expo';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
 import ThemePicker from '../components/ThemePicker';
 import { Ionicons } from '@expo/vector-icons';
+import { login as kairosLogin, getMe } from '../services/authService';
+import { getRolFromToken, saveSession, type StoredUser } from '../store/authStore';
 
 // Necesario para cerrar el navegador de OAuth correctamente en Expo
 WebBrowser.maybeCompleteAuthSession();
 
 interface Props {
   onRegister?: () => void;
+  onLoginSuccess?: (session: { token: string; user: StoredUser }) => void;
 }
 
-export default function LoginScreen({ onRegister }: Props) {
+export default function LoginScreen({ onRegister, onLoginSuccess }: Props) {
   const { theme } = useTheme();
   const shadows = makeShadows(theme.shadowColor);
 
-  const { signIn, setActive, isLoaded } = useSignIn();
   const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
 
   const [email, setEmail] = useState('');
@@ -42,7 +44,6 @@ export default function LoginScreen({ onRegister }: Props) {
   // ─── Login con email y contraseña ─────────────────────────────────────────
 
   const handleLogin = async () => {
-    if (!isLoaded) return;
     if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Por favor ingresa tu correo y contraseña');
       return;
@@ -50,17 +51,17 @@ export default function LoginScreen({ onRegister }: Props) {
 
     setLoading(true);
     try {
-      const result = await signIn.create({
-        identifier: email.trim(),
-        password,
-      });
+      const result = await kairosLogin(email.trim(), password);
+      const me = await getMe(result.access_token);
+      const sessionUser: StoredUser = {
+        id_usuario: me.id_usuario,
+        nombre: me.nombre,
+        email: me.email,
+        rol: getRolFromToken(result.access_token),
+      };
 
-      if (result.status === 'complete') {
-        // Clerk activa la sesión → App.tsx detecta isSignedIn automáticamente
-        await setActive({ session: result.createdSessionId });
-      } else {
-        Alert.alert('Error', 'No se pudo completar el inicio de sesión. Intenta de nuevo.');
-      }
+      await saveSession(result.access_token, result.refresh_token, sessionUser);
+      onLoginSuccess?.({ token: result.access_token, user: sessionUser });
     } catch (error: any) {
       const msg =
         error?.errors?.[0]?.longMessage ||
@@ -197,7 +198,7 @@ export default function LoginScreen({ onRegister }: Props) {
             ]}
             onPress={handleLogin}
             activeOpacity={0.85}
-            disabled={loading || !isLoaded}
+            disabled={loading}
           >
             {loading ? (
               <ActivityIndicator color={theme.textInverse} size="small" />
