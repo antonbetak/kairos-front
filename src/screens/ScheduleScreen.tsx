@@ -10,6 +10,7 @@ import {
   Alert,
   LayoutChangeEvent,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/expo';
 import { useTheme } from '../context/ThemeContext';
@@ -26,7 +27,6 @@ import {
 import { listarEventos, type EventItem } from '../services/calendarService';
 import { obtenerFitData } from '../services/fitService';
 import { getAccessToken, getStoredUser } from '../store/authStore';
-
 
 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -315,24 +315,24 @@ function TimelineBlock({
             {block.horaInicio} – {block.horaFin}
           </Text>
         )}
-        {esAgente && height >= 72 && (
-          <View style={styles.blockActions}>
-            <TouchableOpacity
-              style={[styles.blockActionBtn, { backgroundColor: theme.success + '20', borderColor: theme.success + '50' }]}
-              onPress={onAceptar}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.blockActionText, { color: theme.success }]}>✓ Aceptar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.blockActionBtn, { backgroundColor: theme.error + '20', borderColor: theme.error + '50' }]}
-              onPress={onRechazar}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.blockActionText, { color: theme.error }]}>✕ Rechazar</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        {esAgente && height >= 60 && (
+  <View style={styles.blockActions}>
+    <TouchableOpacity
+      style={[styles.blockActionBtn, { backgroundColor: theme.success + '20', borderColor: theme.success + '50' }]}
+      onPress={onAceptar}
+      activeOpacity={0.8}
+    >
+      <Ionicons name="checkmark" size={14} color={theme.success} />
+    </TouchableOpacity>
+    <TouchableOpacity
+      style={[styles.blockActionBtn, { backgroundColor: theme.error + '20', borderColor: theme.error + '50' }]}
+      onPress={onRechazar}
+      activeOpacity={0.8}
+    >
+      <Ionicons name="close" size={14} color={theme.error} />
+    </TouchableOpacity>
+  </View>
+)}
       </View>
     </TouchableOpacity>
   );
@@ -460,7 +460,10 @@ export default function ScheduleScreen() {
     if (!token) throw new Error('No hay sesión activa');
 
     const fecha = daysArr[selectedDay].date;
-    const fechaStr = fecha.toISOString().split('T')[0];
+    const y = fecha.getFullYear();
+    const m = String(fecha.getMonth() + 1).padStart(2, '0');
+    const d = String(fecha.getDate()).padStart(2, '0');
+    const fechaStr = `${y}-${m}-${d}`;
 
     const bloques = await generarHorario(token, fechaStr);
 
@@ -758,7 +761,14 @@ const styles = StyleSheet.create({
   blockTitleSm: { fontSize: typography.xs },
   blockTime: { fontSize: typography.xs, marginTop: 2 },
   blockActions: { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.xs },
-  blockActionBtn: { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radii.full, borderWidth: 1 },
+  blockActionBtn: { 
+  width: 24, 
+  height: 24, 
+  borderRadius: radii.sm, 
+  borderWidth: 1,
+  alignItems: 'center',
+  justifyContent: 'center',
+},
   blockActionText: { fontSize: typography.xs, fontWeight: typography.semibold },
 
   nowLine: { position: 'absolute', left: 0, right: 0, flexDirection: 'row', alignItems: 'center', zIndex: 10 },
