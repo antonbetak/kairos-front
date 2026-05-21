@@ -26,6 +26,7 @@ import { listarTareas, actualizarTarea, crearTarea, type EstadoTarea, type Prior
 import { listarNotificaciones } from '../services/notificationsService';
 import NewTaskModal, { NuevaTarea } from '../components/NewTaskModal';
 import NotificationsModal from '../components/NotificationsModal';
+import UserManualModal from '../components/UserManualModal';
 
 const TIPO_LABELS: Record<TipoTarea, string> = {
   tarea: 'Tarea',
@@ -61,11 +62,9 @@ function formatTimeInput(date: Date) {
 function parseTimeToISO(time: string, baseDate = new Date()) {
   const match = time.trim().match(/^(\d{1,2}):(\d{2})$/);
   if (!match) return null;
-
   const hours = Number(match[1]);
   const minutes = Number(match[2]);
   if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
-
   const date = new Date(baseDate);
   date.setHours(hours, minutes, 0, 0);
   return date.toISOString();
@@ -74,10 +73,8 @@ function parseTimeToISO(time: string, baseDate = new Date()) {
 function formatTaskTimeRange(task: Tarea) {
   const completedAt = task.completed_at ?? (isTaskCompleted(task) ? task.updated_at : null);
   if (!completedAt) return null;
-
   const end = new Date(completedAt);
   if (Number.isNaN(end.getTime())) return null;
-
   const start = task.started_at ? new Date(task.started_at) : new Date(end.getTime() - 30 * 60000);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
   return `${formatTimeInput(start)} – ${formatTimeInput(end)}`;
@@ -93,7 +90,6 @@ function showTaskDetails(task: Tarea) {
       : end && !Number.isNaN(end.getTime())
       ? new Date(end.getTime() - 30 * 60000)
       : null;
-
     Alert.alert(
       task.titulo,
       start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())
@@ -102,7 +98,6 @@ function showTaskDetails(task: Tarea) {
     );
     return;
   }
-
   if (estado === 'abandonada') {
     Alert.alert(
       task.titulo,
@@ -110,6 +105,7 @@ function showTaskDetails(task: Tarea) {
     );
   }
 }
+
 
 function TaskCard({ task, onEdit, onComplete, onAbandon }: {
   task: Tarea;
@@ -124,73 +120,71 @@ function TaskCard({ task, onEdit, onComplete, onAbandon }: {
   const tipo = task.tipo ?? 'libre';
   const prioridad = task.prioridad ?? 0;
   const statusConfig = {
-    pendiente: { label: 'Pendiente', color: theme.warning, bg: theme.surfaceElevated },
+    pendiente:  { label: 'Pendiente',  color: theme.warning, bg: theme.surfaceElevated },
     completada: { label: 'Completada', color: theme.success, bg: theme.successMuted },
-    abandonada: { label: 'Abandonada', color: theme.error, bg: theme.errorMuted },
+    abandonada: { label: 'Abandonada', color: theme.error,   bg: theme.errorMuted },
   };
   const priorityColor = prioridad === 2 ? theme.error : prioridad === 1 ? theme.warning : theme.textSecondary;
   const status = statusConfig[estado];
 
   return (
-    <View
-      style={[styles.taskCard, { backgroundColor: theme.surface, borderColor: theme.border }, (completada || abandonada) && styles.taskCardDone]}
-    >
+    <View style={[styles.taskCard, { backgroundColor: theme.surface, borderColor: theme.border }, (completada || abandonada) && styles.taskCardDone]}>
       <TouchableOpacity
         style={styles.taskCardMain}
         onPress={() => showTaskDetails(task)}
         disabled={!completada && !abandonada}
         activeOpacity={0.75}
       >
-      <View style={styles.taskCardHeader}>
-        <View style={styles.taskCardLeft}>
-          <View style={[styles.prioDot, { backgroundColor: completada ? theme.success : abandonada ? theme.error : priorityColor }]} />
-          <Ionicons
-            name={completada ? 'checkmark-circle' : abandonada ? 'close-circle' : 'square-outline'}
-            size={18}
-            color={completada ? theme.success : abandonada ? theme.error : theme.textSecondary}
-            style={styles.taskIconStyle}
-          />
-          <View style={styles.taskInfo}>
-            <Text style={[styles.taskTitle, { color: theme.textPrimary }, (completada || abandonada) && { textDecorationLine: 'line-through', color: theme.textTertiary }]}>
-              {task.titulo}
-            </Text>
-            {task.descripcion && (
-              <Text style={[styles.taskDate, { color: theme.textTertiary }]} numberOfLines={1}>
-                {task.descripcion}
+        <View style={styles.taskCardHeader}>
+          <View style={styles.taskCardLeft}>
+            <View style={[styles.prioDot, { backgroundColor: completada ? theme.success : abandonada ? theme.error : priorityColor }]} />
+            <Ionicons
+              name={completada ? 'checkmark-circle' : abandonada ? 'close-circle' : 'square-outline'}
+              size={18}
+              color={completada ? theme.success : abandonada ? theme.error : theme.textSecondary}
+              style={styles.taskIconStyle}
+            />
+            <View style={styles.taskInfo}>
+              <Text style={[styles.taskTitle, { color: theme.textPrimary }, (completada || abandonada) && { textDecorationLine: 'line-through', color: theme.textTertiary }]}>
+                {task.titulo}
               </Text>
-            )}
-            {task.due_at && (
-              <Text style={[styles.taskDate, { color: theme.textTertiary }]}>
-                {new Date(task.due_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-              </Text>
-            )}
+              {task.descripcion && (
+                <Text style={[styles.taskDate, { color: theme.textTertiary }]} numberOfLines={1}>
+                  {task.descripcion}
+                </Text>
+              )}
+              {task.due_at && (
+                <Text style={[styles.taskDate, { color: theme.textTertiary }]}>
+                  {new Date(task.due_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </Text>
+              )}
+            </View>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
+            <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
           </View>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
-          <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
-        </View>
-      </View>
 
-      <View style={styles.taskMetaRow}>
-        <View style={[styles.metaBadge, { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '40' }]}>
-          <Text style={[styles.metaText, { color: theme.primary }]}>{TIPO_LABELS[tipo]}</Text>
-        </View>
-        <View style={[styles.metaBadge, { backgroundColor: `${priorityColor}18`, borderColor: `${priorityColor}55` }]}>
-          <Text style={[styles.metaText, { color: priorityColor }]}>Prioridad {PRIORIDAD_LABELS[prioridad]}</Text>
-        </View>
-        {formatTaskTimeRange(task) && (
-          <View style={[styles.metaBadge, { backgroundColor: theme.successMuted, borderColor: theme.success + '55' }]}>
-            <Text style={[styles.metaText, { color: theme.success }]}>Hecha {formatTaskTimeRange(task)}</Text>
+        <View style={styles.taskMetaRow}>
+          <View style={[styles.metaBadge, { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '40' }]}>
+            <Text style={[styles.metaText, { color: theme.primary }]}>{TIPO_LABELS[tipo]}</Text>
           </View>
-        )}
-        {task.abandon_reason && (
-          <View style={[styles.metaBadge, { backgroundColor: theme.errorMuted, borderColor: theme.error + '55' }]}>
-            <Text style={[styles.metaText, { color: theme.error }]} numberOfLines={1}>
-              {task.abandon_reason}
-            </Text>
+          <View style={[styles.metaBadge, { backgroundColor: `${priorityColor}18`, borderColor: `${priorityColor}55` }]}>
+            <Text style={[styles.metaText, { color: priorityColor }]}>Prioridad {PRIORIDAD_LABELS[prioridad]}</Text>
           </View>
-        )}
-      </View>
+          {formatTaskTimeRange(task) && (
+            <View style={[styles.metaBadge, { backgroundColor: theme.successMuted, borderColor: theme.success + '55' }]}>
+              <Text style={[styles.metaText, { color: theme.success }]}>Hecha {formatTaskTimeRange(task)}</Text>
+            </View>
+          )}
+          {task.abandon_reason && (
+            <View style={[styles.metaBadge, { backgroundColor: theme.errorMuted, borderColor: theme.error + '55' }]}>
+              <Text style={[styles.metaText, { color: theme.error }]} numberOfLines={1}>
+                {task.abandon_reason}
+              </Text>
+            </View>
+          )}
+        </View>
       </TouchableOpacity>
 
       <View style={styles.taskActions}>
@@ -203,10 +197,7 @@ function TaskCard({ task, onEdit, onComplete, onAbandon }: {
           <Text style={[styles.taskActionText, { color: theme.textSecondary }]}>Editar</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[
-            styles.taskActionBtn,
-            { backgroundColor: completada ? theme.surfaceElevated : theme.successMuted, borderColor: completada ? theme.border : theme.success + '50' },
-          ]}
+          style={[styles.taskActionBtn, { backgroundColor: completada ? theme.surfaceElevated : theme.successMuted, borderColor: completada ? theme.border : theme.success + '50' }]}
           onPress={onComplete}
           disabled={completada}
           activeOpacity={0.8}
@@ -230,48 +221,27 @@ function TaskCard({ task, onEdit, onComplete, onAbandon }: {
   );
 }
 
-function CompletionModal({
-  visible,
-  task,
-  startTime,
-  endTime,
-  error,
-  onChangeStart,
-  onChangeEnd,
-  onClose,
-  onSave,
-}: {
-  visible: boolean;
-  task: Tarea | null;
-  startTime: string;
-  endTime: string;
-  error: string;
-  onChangeStart: (value: string) => void;
-  onChangeEnd: (value: string) => void;
-  onClose: () => void;
-  onSave: () => void;
+
+function CompletionModal({ visible, task, startTime, endTime, error, onChangeStart, onChangeEnd, onClose, onSave }: {
+  visible: boolean; task: Tarea | null; startTime: string; endTime: string; error: string;
+  onChangeStart: (v: string) => void; onChangeEnd: (v: string) => void;
+  onClose: () => void; onSave: () => void;
 }) {
   const { theme } = useTheme();
-
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose} />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.centerModalWrapper}>
         <View style={[styles.actionModal, { backgroundColor: theme.bg, borderColor: theme.border }]}>
           <Text style={[styles.actionModalTitle, { color: theme.textPrimary }]}>Completar tarea</Text>
-          <Text style={[styles.actionModalSub, { color: theme.textSecondary }]} numberOfLines={2}>
-            {task?.titulo}
-          </Text>
-
+          <Text style={[styles.actionModalSub, { color: theme.textSecondary }]} numberOfLines={2}>{task?.titulo}</Text>
           <View style={styles.timeInputsRow}>
             <View style={styles.timeField}>
               <Text style={[styles.actionLabel, { color: theme.textSecondary }]}>Inicio aprox.</Text>
               <TextInput
                 style={[styles.timeInput, { color: theme.textPrimary, borderColor: theme.border, backgroundColor: theme.surfaceElevated }]}
-                value={startTime}
-                onChangeText={onChangeStart}
-                placeholder="09:30"
-                placeholderTextColor={theme.textTertiary}
+                value={startTime} onChangeText={onChangeStart}
+                placeholder="09:30" placeholderTextColor={theme.textTertiary}
                 keyboardType="numbers-and-punctuation"
               />
             </View>
@@ -279,17 +249,13 @@ function CompletionModal({
               <Text style={[styles.actionLabel, { color: theme.textSecondary }]}>Fin aprox.</Text>
               <TextInput
                 style={[styles.timeInput, { color: theme.textPrimary, borderColor: theme.border, backgroundColor: theme.surfaceElevated }]}
-                value={endTime}
-                onChangeText={onChangeEnd}
-                placeholder="10:30"
-                placeholderTextColor={theme.textTertiary}
+                value={endTime} onChangeText={onChangeEnd}
+                placeholder="10:30" placeholderTextColor={theme.textTertiary}
                 keyboardType="numbers-and-punctuation"
               />
             </View>
           </View>
-
           {error ? <Text style={[styles.actionError, { color: theme.error }]}>{error}</Text> : null}
-
           <View style={styles.actionModalButtons}>
             <TouchableOpacity style={[styles.secondaryBtn, { borderColor: theme.border }]} onPress={onClose}>
               <Text style={[styles.secondaryBtnText, { color: theme.textSecondary }]}>Cancelar</Text>
@@ -304,47 +270,27 @@ function CompletionModal({
   );
 }
 
-function AbandonModal({
-  visible,
-  task,
-  reason,
-  error,
-  onChangeReason,
-  onClose,
-  onSave,
-}: {
-  visible: boolean;
-  task: Tarea | null;
-  reason: string;
-  error: string;
-  onChangeReason: (value: string) => void;
-  onClose: () => void;
-  onSave: () => void;
+
+function AbandonModal({ visible, task, reason, error, onChangeReason, onClose, onSave }: {
+  visible: boolean; task: Tarea | null; reason: string; error: string;
+  onChangeReason: (v: string) => void; onClose: () => void; onSave: () => void;
 }) {
   const { theme } = useTheme();
-
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose} />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.centerModalWrapper}>
         <View style={[styles.actionModal, { backgroundColor: theme.bg, borderColor: theme.border }]}>
           <Text style={[styles.actionModalTitle, { color: theme.textPrimary }]}>Abandonar tarea</Text>
-          <Text style={[styles.actionModalSub, { color: theme.textSecondary }]} numberOfLines={2}>
-            {task?.titulo}
-          </Text>
+          <Text style={[styles.actionModalSub, { color: theme.textSecondary }]} numberOfLines={2}>{task?.titulo}</Text>
           <Text style={[styles.actionLabel, { color: theme.textSecondary }]}>Razón</Text>
           <TextInput
             style={[styles.reasonInput, { color: theme.textPrimary, borderColor: theme.border, backgroundColor: theme.surfaceElevated }]}
-            value={reason}
-            onChangeText={onChangeReason}
-            placeholder="¿Por qué la abandonaste?"
-            placeholderTextColor={theme.textTertiary}
-            multiline
-            textAlignVertical="top"
+            value={reason} onChangeText={onChangeReason}
+            placeholder="¿Por qué la abandonaste?" placeholderTextColor={theme.textTertiary}
+            multiline textAlignVertical="top"
           />
-
           {error ? <Text style={[styles.actionError, { color: theme.error }]}>{error}</Text> : null}
-
           <View style={styles.actionModalButtons}>
             <TouchableOpacity style={[styles.secondaryBtn, { borderColor: theme.border }]} onPress={onClose}>
               <Text style={[styles.secondaryBtnText, { color: theme.textSecondary }]}>Cancelar</Text>
@@ -359,7 +305,6 @@ function AbandonModal({
   );
 }
 
-// ─── StatCard ─────────────────────────────────────────────────────────────────
 
 function StatCard({ value, label, sublabel, accentColor, bgColor, borderColor }: {
   value: string; label: string; sublabel?: string;
@@ -386,7 +331,6 @@ export default function HomeScreen({ onAvatarPress }: Props) {
   const { kairosToken } = useKairosToken();
   const { user } = useUser();
 
-  // Datos del usuario desde Clerk
   const nombre = user?.firstName ?? user?.emailAddresses?.[0]?.emailAddress?.split('@')[0] ?? '';
   const inicial = nombre[0]?.toUpperCase() ?? '?';
   const fotoUrl = user?.imageUrl ?? null;
@@ -406,6 +350,7 @@ export default function HomeScreen({ onAvatarPress }: Props) {
   const [abandonError, setAbandonError] = useState('');
   const [showNotifs, setShowNotifs] = useState(false);
   const [notificaciones, setNotificaciones] = useState(0);
+  const [showManual, setShowManual] = useState(false);
 
   const today = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -472,9 +417,7 @@ export default function HomeScreen({ onAvatarPress }: Props) {
 
   const handleComplete = async () => {
     try {
-      if (!kairosToken) return;
-      if (!completingTask) return;
-
+      if (!kairosToken || !completingTask) return;
       const startedAt = parseTimeToISO(completionStart);
       const completedAt = parseTimeToISO(completionEnd);
       if (!startedAt || !completedAt) {
@@ -485,16 +428,11 @@ export default function HomeScreen({ onAvatarPress }: Props) {
         setCompletionError('La hora de inicio debe ser antes que la de fin');
         return;
       }
-
       const actualizada = await actualizarTarea(kairosToken, completingTask.id_tarea, {
-        completada: true,
-        estado: 'completada',
-        started_at: startedAt,
-        completed_at: completedAt,
+        completada: true, estado: 'completada', started_at: startedAt, completed_at: completedAt,
       });
       setTareas(prev => prev.map(t => t.id_tarea === actualizada.id_tarea ? {
-        ...t,
-        ...actualizada,
+        ...t, ...actualizada,
         started_at: actualizada.started_at ?? startedAt,
         completed_at: actualizada.completed_at ?? completedAt,
       } : t));
@@ -516,24 +454,18 @@ export default function HomeScreen({ onAvatarPress }: Props) {
 
   const handleAbandon = async () => {
     try {
-      if (!kairosToken) return;
-      if (!abandoningTask) return;
+      if (!kairosToken || !abandoningTask) return;
       if (!abandonReason.trim()) {
         setAbandonError('Cuéntanos la razón para que el agente aprenda de esto');
         return;
       }
-
       const abandonedAt = new Date().toISOString();
       const reason = abandonReason.trim();
       const actualizada = await actualizarTarea(kairosToken, abandoningTask.id_tarea, {
-        completada: false,
-        estado: 'abandonada',
-        abandoned_at: abandonedAt,
-        abandon_reason: reason,
+        completada: false, estado: 'abandonada', abandoned_at: abandonedAt, abandon_reason: reason,
       });
       setTareas(prev => prev.map(t => t.id_tarea === actualizada.id_tarea ? {
-        ...t,
-        ...actualizada,
+        ...t, ...actualizada,
         abandoned_at: actualizada.abandoned_at ?? abandonedAt,
         abandon_reason: actualizada.abandon_reason ?? reason,
       } : t));
@@ -547,9 +479,7 @@ export default function HomeScreen({ onAvatarPress }: Props) {
       const actualizada = await actualizarTarea(kairosToken, tarea.id_tarea, cambios);
       setTareas(prev => prev.map(t => t.id_tarea === actualizada.id_tarea ? actualizada : t));
       setEditingTask(null);
-    } catch (err: any) {
-      throw err;
-    }
+    } catch (err: any) { throw err; }
   };
 
   const completadas = tareas.filter(isTaskCompleted).length;
@@ -563,10 +493,8 @@ export default function HomeScreen({ onAvatarPress }: Props) {
 
   const filtered = filter === 'todas'
     ? tareas
-    : filter === 'completada'
-    ? tareas.filter(isTaskCompleted)
-    : filter === 'abandonada'
-    ? tareas.filter(isTaskAbandoned)
+    : filter === 'completada' ? tareas.filter(isTaskCompleted)
+    : filter === 'abandonada' ? tareas.filter(isTaskAbandoned)
     : tareas.filter(t => getTaskEstado(t) === 'pendiente');
 
   const FILTERS: Array<{ key: typeof filter; label: string }> = [
@@ -589,6 +517,15 @@ export default function HomeScreen({ onAvatarPress }: Props) {
             <Text style={[styles.dateText, { color: theme.textSecondary }]}>{today}</Text>
           </View>
           <View style={styles.headerButtons}>
+            {/* Manual */}
+            <TouchableOpacity
+              style={[styles.headerBtn, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
+              onPress={() => setShowManual(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="help-circle-outline" size={20} color={theme.textSecondary} />
+            </TouchableOpacity>
+
             {/* Notificaciones */}
             <TouchableOpacity
               style={[styles.headerBtn, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
@@ -748,8 +685,8 @@ export default function HomeScreen({ onAvatarPress }: Props) {
         startTime={completionStart}
         endTime={completionEnd}
         error={completionError}
-        onChangeStart={value => { setCompletionStart(value); setCompletionError(''); }}
-        onChangeEnd={value => { setCompletionEnd(value); setCompletionError(''); }}
+        onChangeStart={v => { setCompletionStart(v); setCompletionError(''); }}
+        onChangeEnd={v => { setCompletionEnd(v); setCompletionError(''); }}
         onClose={closeCompleteModal}
         onSave={handleComplete}
       />
@@ -759,7 +696,7 @@ export default function HomeScreen({ onAvatarPress }: Props) {
         task={abandoningTask}
         reason={abandonReason}
         error={abandonError}
-        onChangeReason={value => { setAbandonReason(value); setAbandonError(''); }}
+        onChangeReason={v => { setAbandonReason(v); setAbandonError(''); }}
         onClose={closeAbandonModal}
         onSave={handleAbandon}
       />
@@ -770,6 +707,11 @@ export default function HomeScreen({ onAvatarPress }: Props) {
           setShowNotifs(false);
           cargarNotificacionesSinLeer();
         }}
+      />
+
+      <UserManualModal
+        visible={showManual}
+        onClose={() => setShowManual(false)}
       />
 
     </SafeAreaView>
@@ -843,84 +785,31 @@ const styles = StyleSheet.create({
   statusBadge: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radii.full, marginLeft: spacing.sm },
   statusText: { fontSize: typography.xs, fontWeight: typography.semibold },
   taskMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  metaBadge: {
-    borderWidth: 1,
-    borderRadius: radii.full,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-  },
+  metaBadge: { borderWidth: 1, borderRadius: radii.full, paddingHorizontal: spacing.sm, paddingVertical: 4 },
   metaText: { fontSize: typography.xs, fontWeight: typography.semibold },
   taskActions: { flexDirection: 'row', gap: spacing.xs },
   taskActionBtn: {
-    flex: 1,
-    minHeight: 36,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 4,
-    paddingHorizontal: spacing.xs,
+    flex: 1, minHeight: 36,
+    borderRadius: radii.md, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
+    flexDirection: 'row', gap: 4, paddingHorizontal: spacing.xs,
   },
   taskActionText: { fontSize: typography.xs, fontWeight: typography.semibold },
 
-  modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#00000055',
-  },
-  centerModalWrapper: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
-  },
-  actionModal: {
-    borderRadius: radii.xl,
-    borderWidth: 1,
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
+  modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: '#00000055' },
+  centerModalWrapper: { flex: 1, justifyContent: 'center', paddingHorizontal: spacing.lg },
+  actionModal: { borderRadius: radii.xl, borderWidth: 1, padding: spacing.lg, gap: spacing.md },
   actionModalTitle: { fontSize: typography.lg, fontWeight: typography.bold },
   actionModalSub: { fontSize: typography.sm, lineHeight: 18 },
-  actionLabel: {
-    fontSize: typography.xs,
-    fontWeight: typography.semibold,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
+  actionLabel: { fontSize: typography.xs, fontWeight: typography.semibold, letterSpacing: 0.6, textTransform: 'uppercase' },
   timeInputsRow: { flexDirection: 'row', gap: spacing.md },
   timeField: { flex: 1, gap: spacing.xs },
-  timeInput: {
-    minHeight: 44,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    fontSize: typography.base,
-    fontWeight: typography.medium,
-  },
-  reasonInput: {
-    minHeight: 96,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    padding: spacing.md,
-    fontSize: typography.base,
-  },
+  timeInput: { minHeight: 44, borderRadius: radii.md, borderWidth: 1, paddingHorizontal: spacing.md, fontSize: typography.base, fontWeight: typography.medium },
+  reasonInput: { minHeight: 96, borderRadius: radii.md, borderWidth: 1, padding: spacing.md, fontSize: typography.base },
   actionError: { fontSize: typography.xs },
   actionModalButtons: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
-  secondaryBtn: {
-    flex: 1,
-    minHeight: 44,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryBtn: {
-    flex: 1,
-    minHeight: 44,
-    borderRadius: radii.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  secondaryBtn: { flex: 1, minHeight: 44, borderRadius: radii.md, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  primaryBtn: { flex: 1, minHeight: 44, borderRadius: radii.md, alignItems: 'center', justifyContent: 'center' },
   secondaryBtnText: { fontSize: typography.sm, fontWeight: typography.semibold },
   primaryBtnText: { fontSize: typography.sm, fontWeight: typography.bold },
 

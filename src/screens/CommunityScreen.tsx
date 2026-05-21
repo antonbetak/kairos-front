@@ -11,6 +11,7 @@ import {
   Share,
   TextInput,
   Image,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -62,6 +63,82 @@ const REACTIONS: Array<{ key: string; icon: IoniconsName }> = [
   { key: 'fire',     icon: 'flame-outline' },
   { key: 'heart',    icon: 'heart-outline' },
 ];
+
+function ReactionButton({
+  reaction,
+  onPress,
+}: {
+  reaction: { key: string; icon: IoniconsName };
+  onPress: () => void;
+}) {
+  const { theme } = useTheme();
+  const scale = useRef(new Animated.Value(1)).current;
+  const ringScale = useRef(new Animated.Value(0.65)).current;
+  const ringOpacity = useRef(new Animated.Value(0)).current;
+  const iconColor = reaction.key === 'fire'
+    ? theme.warning
+    : reaction.key === 'heart'
+    ? theme.error
+    : theme.primary;
+
+  const handlePress = () => {
+    scale.setValue(1);
+    ringScale.setValue(0.65);
+    ringOpacity.setValue(0.42);
+
+    Animated.parallel([
+      Animated.sequence([
+        Animated.spring(scale, {
+          toValue: 1.28,
+          useNativeDriver: true,
+          damping: 8,
+          stiffness: 240,
+        }),
+        Animated.spring(scale, {
+          toValue: 1,
+          useNativeDriver: true,
+          damping: 10,
+          stiffness: 180,
+        }),
+      ]),
+      Animated.timing(ringScale, {
+        toValue: 1.75,
+        duration: 360,
+        useNativeDriver: true,
+      }),
+      Animated.timing(ringOpacity, {
+        toValue: 0,
+        duration: 360,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    onPress();
+  };
+
+  return (
+    <TouchableOpacity
+      style={[styles.reactionBtn, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
+      onPress={handlePress}
+      activeOpacity={0.8}
+    >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.reactionPulse,
+          {
+            borderColor: iconColor,
+            opacity: ringOpacity,
+            transform: [{ scale: ringScale }],
+          },
+        ]}
+      />
+      <Animated.View style={{ transform: [{ scale }] }}>
+        <Ionicons name={reaction.icon} size={16} color={iconColor} />
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
 
 
 function Avatar({ profile, size = 40 }: { profile?: UserProfile; size?: number }) {
@@ -135,14 +212,11 @@ function FeedItem({
       {!isMine && (
         <View style={styles.feedItemActions}>
           {REACTIONS.map(r => (
-            <TouchableOpacity
+            <ReactionButton
               key={r.key}
-              style={[styles.reactionBtn, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
+              reaction={r}
               onPress={() => onReact(event.id_evento, r.key)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name={r.icon} size={15} color={theme.textSecondary} />
-            </TouchableOpacity>
+            />
           ))}
         </View>
       )}
@@ -523,7 +597,14 @@ const styles = StyleSheet.create({
   feedItemTitle: { fontSize: typography.base, fontWeight: typography.medium },
   feedItemMessage: { fontSize: typography.sm, lineHeight: 18 },
   feedItemActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
-  reactionBtn: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  reactionBtn: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, alignItems: 'center', justifyContent: 'center', overflow: 'visible' },
+  reactionPulse: {
+    position: 'absolute',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 2,
+  },
 
   statsRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md },
   statCard: { flex: 1, borderRadius: radii.xl, borderWidth: 1, padding: spacing.base, alignItems: 'center', gap: 2 },

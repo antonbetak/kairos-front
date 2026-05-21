@@ -10,11 +10,12 @@ import {
   Alert,
   LayoutChangeEvent,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/expo';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii } from '../styles/theme';
-import { listarTareas, type Tarea } from '../services/taskService';
+import { listarTareas, crearTarea, type Tarea } from '../services/taskService';
 import {
   listarBloques,
   generarHorario,
@@ -26,7 +27,8 @@ import {
 import { listarEventos, type EventItem } from '../services/calendarService';
 import { obtenerFitData } from '../services/fitService';
 import { getAccessToken, getStoredUser } from '../store/authStore';
-
+import AgentChatModal from '../components/AgentChatModal';
+import { apiRequest } from '../services/api';
 
 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -315,24 +317,24 @@ function TimelineBlock({
             {block.horaInicio} – {block.horaFin}
           </Text>
         )}
-        {esAgente && height >= 72 && (
-          <View style={styles.blockActions}>
-            <TouchableOpacity
-              style={[styles.blockActionBtn, { backgroundColor: theme.success + '20', borderColor: theme.success + '50' }]}
-              onPress={onAceptar}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.blockActionText, { color: theme.success }]}>✓ Aceptar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.blockActionBtn, { backgroundColor: theme.error + '20', borderColor: theme.error + '50' }]}
-              onPress={onRechazar}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.blockActionText, { color: theme.error }]}>✕ Rechazar</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        {esAgente && height >= 60 && (
+  <View style={styles.blockActions}>
+    <TouchableOpacity
+      style={[styles.blockActionBtn, { backgroundColor: theme.success + '20', borderColor: theme.success + '50' }]}
+      onPress={onAceptar}
+      activeOpacity={0.8}
+    >
+      <Ionicons name="checkmark" size={14} color={theme.success} />
+    </TouchableOpacity>
+    <TouchableOpacity
+      style={[styles.blockActionBtn, { backgroundColor: theme.error + '20', borderColor: theme.error + '50' }]}
+      onPress={onRechazar}
+      activeOpacity={0.8}
+    >
+      <Ionicons name="close" size={14} color={theme.error} />
+    </TouchableOpacity>
+  </View>
+)}
       </View>
     </TouchableOpacity>
   );
@@ -358,6 +360,8 @@ export default function ScheduleScreen() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showChat, setShowChat] = useState(false);
+  const [idUsuario, setIdUsuario] = useState<string>('');
 
   const HOURS = Array.from({ length: 16 }, (_, i) => i + START_HOUR);
 
@@ -453,6 +457,12 @@ export default function ScheduleScreen() {
 
   useEffect(() => { cargarDatos(); }, [cargarDatos]);
 
+  useEffect(() => {
+    getStoredUser().then(u => {
+      if (u?.id_usuario) setIdUsuario(u.id_usuario);
+    });
+  }, []);
+
   const handleGenerar = async () => {
   setGenerating(true);
   try {
@@ -460,7 +470,10 @@ export default function ScheduleScreen() {
     if (!token) throw new Error('No hay sesión activa');
 
     const fecha = daysArr[selectedDay].date;
-    const fechaStr = fecha.toISOString().split('T')[0];
+    const y = fecha.getFullYear();
+    const m = String(fecha.getMonth() + 1).padStart(2, '0');
+    const d = String(fecha.getDate()).padStart(2, '0');
+    const fechaStr = `${y}-${m}-${d}`;
 
     const bloques = await generarHorario(token, fechaStr);
 
@@ -490,16 +503,24 @@ export default function ScheduleScreen() {
 };
 
   const handleAceptar = async (block: ScheduleAgentBlock) => {
-    try {
-      const token = await getAccessToken();
-      if (!token) return;
-      const aceptado = await aceptarBloque(token, block.id);
-      setBloques(prev => [...prev, aceptado]);
-      setBloquesAgente(prev => prev.filter(b => b.id !== block.id));
-    } catch (err: any) {
-      Alert.alert('Error', err.message);
-    }
-  };
+  try {
+    const token = await getAccessToken();
+    if (!token) return;
+    const aceptado = await aceptarBloque(token, block.id);
+    setBloques(prev => [...prev, aceptado]);
+    setBloquesAgente(prev => prev.filter(b => b.id !== block.id));
+
+    await crearTarea(token, {
+      titulo: block.titulo,
+      descripcion: block.razon ?? undefined,
+      due_at: block.fecha_inicio,
+      tipo: block.tipo as any,
+    });
+
+  } catch (err: any) {
+  Alert.alert('Error', err.message ?? 'No se pudo completar la acción');
+}
+};
 
   const handleRechazar = async (block: ScheduleAgentBlock) => {
     try {
@@ -508,8 +529,8 @@ export default function ScheduleScreen() {
       await rechazarBloque(token, block.id);
       setBloquesAgente(prev => prev.filter(b => b.id !== block.id));
     } catch (err: any) {
-      Alert.alert('Error', err.message);
-    }
+  Alert.alert('Error', err.message ?? 'No se pudo completar la acción');
+}
   };
 
 
@@ -690,6 +711,52 @@ export default function ScheduleScreen() {
           </View>
         </ScrollView>
       )}
+      {/* FAB Chat */}
+        <TouchableOpacity
+          style={[styles.chatFab, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          onPress={() => setShowChat(true)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={20} color={theme.primary} />
+        </TouchableOpacity>
+
+        <AgentChatModal
+          visible={showChat}
+          onClose={() => setShowChat(false)}
+          idUsuario={idUsuario}
+          fecha={(() => {
+            const f = daysArr[selectedDay].date;
+            return `${f.getFullYear()}-${String(f.getMonth()+1).padStart(2,'0')}-${String(f.getDate()).padStart(2,'0')}`;
+          })()}
+          tareas={tareas}
+          eventosCalendario={eventosGoogle}
+          bloquesHorario={[...bloques, ...bloquesAgente]}
+          onBloqueAgregado={async (bloque) => {
+  try {
+    const token = await getAccessToken();
+    if (!token) return;
+    const creado = await apiRequest<any>(`/schedule`, {
+      method: 'POST',
+      token,
+      body: {
+        titulo: bloque.titulo,
+        descripcion: bloque.razon ?? null,
+        fecha_inicio: bloque.fecha_inicio,
+        fecha_fin: bloque.fecha_fin,
+        tipo: bloque.tipo,
+        status: 'propuesto',
+      },
+    });
+    setBloquesAgente(prev => [...prev, {
+      ...bloque,
+      id: creado.id,
+      estado: 'propuesto',
+    }]);
+  } catch {
+    setBloquesAgente(prev => [...prev, bloque]);
+  }
+}}
+        />
     </SafeAreaView>
   );
 }
@@ -758,7 +825,14 @@ const styles = StyleSheet.create({
   blockTitleSm: { fontSize: typography.xs },
   blockTime: { fontSize: typography.xs, marginTop: 2 },
   blockActions: { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.xs },
-  blockActionBtn: { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radii.full, borderWidth: 1 },
+  blockActionBtn: { 
+  width: 24, 
+  height: 24, 
+  borderRadius: radii.sm, 
+  borderWidth: 1,
+  alignItems: 'center',
+  justifyContent: 'center',
+},
   blockActionText: { fontSize: typography.xs, fontWeight: typography.semibold },
 
   nowLine: { position: 'absolute', left: 0, right: 0, flexDirection: 'row', alignItems: 'center', zIndex: 10 },
@@ -768,4 +842,16 @@ const styles = StyleSheet.create({
   errorBox: { alignItems: 'center', marginTop: spacing.xl, gap: spacing.sm },
   errorText: { fontSize: typography.sm, textAlign: 'center' },
   emptyText: { textAlign: 'center', marginTop: spacing.xl, fontSize: typography.sm },
+
+  chatFab: {
+  position: 'absolute',
+  bottom: spacing.xl,
+  left: spacing.base,
+  width: 48,
+  height: 48,
+  borderRadius: 24,
+  borderWidth: 1,
+  alignItems: 'center',
+  justifyContent: 'center',
+},
 });
