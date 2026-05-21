@@ -1,4 +1,4 @@
-const BASE_URL = 'http:/192.168.100.5:8000';
+const BASE_URL = 'http://192.168.1.86:8000';
 
 type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
@@ -28,11 +28,29 @@ export async function apiRequest<T>(
     body: body ? JSON.stringify(body) : undefined,
   });
 
+  const responseText = await response.text();
+
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Error desconocido' }));
+    const error = responseText
+      ? (() => {
+          try {
+            return JSON.parse(responseText);
+          } catch {
+            return { detail: responseText };
+          }
+        })()
+      : { detail: 'Error desconocido' };
     console.warn('API Error:', response.status, JSON.stringify(error));
     throw new Error(error.detail || `Error ${response.status}`);
   }
 
-  return response.json();
+  if (!responseText) {
+    return undefined as T;
+  }
+
+  try {
+    return JSON.parse(responseText) as T;
+  } catch {
+    return responseText as T;
+  }
 }
