@@ -15,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/expo';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii } from '../styles/theme';
-import { listarTareas, type Tarea } from '../services/taskService';
+import { listarTareas, crearTarea, type Tarea } from '../services/taskService';
 import {
   listarBloques,
   generarHorario,
@@ -502,16 +502,24 @@ export default function ScheduleScreen() {
 };
 
   const handleAceptar = async (block: ScheduleAgentBlock) => {
-    try {
-      const token = await getAccessToken();
-      if (!token) return;
-      const aceptado = await aceptarBloque(token, block.id);
-      setBloques(prev => [...prev, aceptado]);
-      setBloquesAgente(prev => prev.filter(b => b.id !== block.id));
-    } catch (err: any) {
-      Alert.alert('Error', err.message);
-    }
-  };
+  try {
+    const token = await getAccessToken();
+    if (!token) return;
+    const aceptado = await aceptarBloque(token, block.id);
+    setBloques(prev => [...prev, aceptado]);
+    setBloquesAgente(prev => prev.filter(b => b.id !== block.id));
+
+    await crearTarea(token, {
+      titulo: block.titulo,
+      descripcion: block.razon ?? undefined,
+      due_at: block.fecha_inicio,
+      tipo: block.tipo as any,
+    });
+
+  } catch (err: any) {
+    Alert.alert('Error', err.message);
+  }
+};
 
   const handleRechazar = async (block: ScheduleAgentBlock) => {
     try {
