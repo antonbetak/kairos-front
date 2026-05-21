@@ -28,6 +28,7 @@ import { listarEventos, type EventItem } from '../services/calendarService';
 import { obtenerFitData } from '../services/fitService';
 import { getAccessToken, getStoredUser } from '../store/authStore';
 import AgentChatModal from '../components/AgentChatModal';
+import { apiRequest } from '../services/api';
 
 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -517,8 +518,8 @@ export default function ScheduleScreen() {
     });
 
   } catch (err: any) {
-    Alert.alert('Error', err.message);
-  }
+  Alert.alert('Error', err.message ?? 'No se pudo completar la acción');
+}
 };
 
   const handleRechazar = async (block: ScheduleAgentBlock) => {
@@ -528,8 +529,8 @@ export default function ScheduleScreen() {
       await rechazarBloque(token, block.id);
       setBloquesAgente(prev => prev.filter(b => b.id !== block.id));
     } catch (err: any) {
-      Alert.alert('Error', err.message);
-    }
+  Alert.alert('Error', err.message ?? 'No se pudo completar la acción');
+}
   };
 
 
@@ -730,7 +731,31 @@ export default function ScheduleScreen() {
           tareas={tareas}
           eventosCalendario={eventosGoogle}
           bloquesHorario={[...bloques, ...bloquesAgente]}
-          onBloqueAgregado={(bloque) => setBloquesAgente(prev => [...prev, bloque])}
+          onBloqueAgregado={async (bloque) => {
+  try {
+    const token = await getAccessToken();
+    if (!token) return;
+    const creado = await apiRequest<any>(`/schedule`, {
+      method: 'POST',
+      token,
+      body: {
+        titulo: bloque.titulo,
+        descripcion: bloque.razon ?? null,
+        fecha_inicio: bloque.fecha_inicio,
+        fecha_fin: bloque.fecha_fin,
+        tipo: bloque.tipo,
+        status: 'propuesto',
+      },
+    });
+    setBloquesAgente(prev => [...prev, {
+      ...bloque,
+      id: creado.id,
+      estado: 'propuesto',
+    }]);
+  } catch {
+    setBloquesAgente(prev => [...prev, bloque]);
+  }
+}}
         />
     </SafeAreaView>
   );
