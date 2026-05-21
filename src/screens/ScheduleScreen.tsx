@@ -27,6 +27,7 @@ import {
 import { listarEventos, type EventItem } from '../services/calendarService';
 import { obtenerFitData } from '../services/fitService';
 import { getAccessToken, getStoredUser } from '../store/authStore';
+import AgentChatModal from '../components/AgentChatModal';
 
 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -358,6 +359,8 @@ export default function ScheduleScreen() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showChat, setShowChat] = useState(false);
+  const [idUsuario, setIdUsuario] = useState<string>('');
 
   const HOURS = Array.from({ length: 16 }, (_, i) => i + START_HOUR);
 
@@ -452,6 +455,12 @@ export default function ScheduleScreen() {
   }, [isSignedIn]);
 
   useEffect(() => { cargarDatos(); }, [cargarDatos]);
+
+  useEffect(() => {
+    getStoredUser().then(u => {
+      if (u?.id_usuario) setIdUsuario(u.id_usuario);
+    });
+  }, []);
 
   const handleGenerar = async () => {
   setGenerating(true);
@@ -693,6 +702,28 @@ export default function ScheduleScreen() {
           </View>
         </ScrollView>
       )}
+      {/* FAB Chat */}
+        <TouchableOpacity
+          style={[styles.chatFab, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          onPress={() => setShowChat(true)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={20} color={theme.primary} />
+        </TouchableOpacity>
+
+        <AgentChatModal
+          visible={showChat}
+          onClose={() => setShowChat(false)}
+          idUsuario={idUsuario}
+          fecha={(() => {
+            const f = daysArr[selectedDay].date;
+            return `${f.getFullYear()}-${String(f.getMonth()+1).padStart(2,'0')}-${String(f.getDate()).padStart(2,'0')}`;
+          })()}
+          tareas={tareas}
+          eventosCalendario={eventosGoogle}
+          bloquesHorario={[...bloques, ...bloquesAgente]}
+          onBloqueAgregado={(bloque) => setBloquesAgente(prev => [...prev, bloque])}
+        />
     </SafeAreaView>
   );
 }
@@ -778,4 +809,16 @@ const styles = StyleSheet.create({
   errorBox: { alignItems: 'center', marginTop: spacing.xl, gap: spacing.sm },
   errorText: { fontSize: typography.sm, textAlign: 'center' },
   emptyText: { textAlign: 'center', marginTop: spacing.xl, fontSize: typography.sm },
+
+  chatFab: {
+  position: 'absolute',
+  bottom: spacing.xl,
+  left: spacing.base,
+  width: 48,
+  height: 48,
+  borderRadius: 24,
+  borderWidth: 1,
+  alignItems: 'center',
+  justifyContent: 'center',
+},
 });
