@@ -454,32 +454,40 @@ export default function ScheduleScreen() {
   useEffect(() => { cargarDatos(); }, [cargarDatos]);
 
   const handleGenerar = async () => {
-    setGenerating(true);
-    try {
-      const token = await getAccessToken();
-      if (!token) throw new Error('No hay sesión activa');
+  setGenerating(true);
+  try {
+    const token = await getAccessToken();
+    if (!token) throw new Error('No hay sesión activa');
 
-      const fecha = daysArr[selectedDay].date;
-      const fechaStr = fecha.toISOString().split('T')[0];
+    const fecha = daysArr[selectedDay].date;
+    const fechaStr = fecha.toISOString().split('T')[0];
 
-      const response = await generarHorario(token, fechaStr);
+    const bloques = await generarHorario(token, fechaStr);
 
-      if (!response.bloques || response.bloques.length === 0) {
-        Alert.alert('Sin bloques generados', 'El agente necesita más historial. Completa algunas tareas primero.');
-        return;
-      }
-
-      setBloquesAgente(response.bloques);
-
-      if (response.es_fallback) {
-        Alert.alert('Horario generado', 'Usamos un horario base. Con el uso se irá personalizando.');
-      }
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'No se pudo generar el horario');
-    } finally {
-      setGenerating(false);
+    if (!bloques || bloques.length === 0) {
+      Alert.alert('Sin bloques', 'El agente necesita más historial. Completa algunas tareas primero.');
+      return;
     }
-  };
+
+    // Los bloques vienen como ScheduleBlock con status='propuesto'
+    // Los mostramos directamente en bloquesAgente como ScheduleAgentBlock
+    setBloquesAgente(bloques.map(b => ({
+      id: b.id,
+      titulo: b.titulo,
+      descripcion: b.descripcion,
+      tipo: b.tipo,
+      estado: b.status,
+      fecha_inicio: b.fecha_inicio,
+      fecha_fin: b.fecha_fin,
+      razon: null,
+    })));
+
+  } catch (err: any) {
+    Alert.alert('Error', err.message ?? 'No se pudo generar el horario');
+  } finally {
+    setGenerating(false);
+  }
+};
 
   const handleAceptar = async (block: ScheduleAgentBlock) => {
     try {
@@ -521,6 +529,7 @@ export default function ScheduleScreen() {
 
   const bloquesDisplay: DisplayBlock[] = bloques
     .filter(b => new Date(b.fecha_inicio).toDateString() === fechaDiaStr)
+    .filter(b => b.status !== 'propuesto')
     .map(scheduleToDisplay);
 
   const agenteDisplay: DisplayBlock[] = bloquesAgente

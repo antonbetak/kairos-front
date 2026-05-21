@@ -37,8 +37,8 @@ export async function listarBloques(token: string): Promise<ScheduleBlock[]> {
 export async function generarHorario(
   token: string,
   fecha: string
-): Promise<GenerateScheduleResponse> {
-  return apiRequest<GenerateScheduleResponse>('/schedule/generate', {
+): Promise<ScheduleBlock[]> {
+  return apiRequest<ScheduleBlock[]>('/schedule/generate', {
     method: 'POST',
     token,
     body: {
