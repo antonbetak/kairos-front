@@ -13,6 +13,7 @@ import ScheduleScreen from './src/screens/ScheduleScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import StatsScreen from './src/screens/StatsScreen';
 import FitnessScreen from './src/screens/FitnessScreen';
+import CommunityScreen from './src/screens/CommunityScreen';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { spacing, typography } from './src/styles/theme';
 
@@ -195,7 +196,7 @@ function AppInner() {
       case 'schedule':  return <ScheduleScreen />;
       case 'stats':     return <StatsScreen />;
       case 'fitness':   return <FitnessScreen />;
-      case 'community': return <PlaceholderScreen title="Comunidad" />;
+      case 'community': return <CommunityScreen />;
     }
   };
 
