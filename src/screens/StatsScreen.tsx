@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Rect, Circle, Path, G, Text as SvgText } from 'react-native-svg';
+import { FontAwesome } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii } from '../styles/theme';
 import { obtenerEstadisticas, obtenerRacha, listarLogros, type Estadistica, type Racha, type Logro } from '../services/statsService';
@@ -57,7 +58,7 @@ function calcularDatosPeriodo(tareas: Tarea[], periodo: Periodo) {
   };
 
   const filtradas = tareas.filter(enPeriodo);
-  const completadas = filtradas.filter(t => t.completada);
+  const completadas = filtradas.filter(t => (t.estado ?? (t.completada ? 'completada' : 'pendiente')) === 'completada');
 
   // Barras
   let barras: { label: string; completadas: number; total: number }[] = [];
@@ -65,7 +66,7 @@ function calcularDatosPeriodo(tareas: Tarea[], periodo: Periodo) {
     const horas = [8, 10, 12, 14, 16, 18];
     barras = horas.map(h => {
       const enHora = filtradas.filter(t => t.due_at && new Date(t.due_at).getHours() === h);
-      return { label: `${h}h`, completadas: enHora.filter(t => t.completada).length, total: enHora.length };
+      return { label: `${h}h`, completadas: enHora.filter(t => (t.estado ?? (t.completada ? 'completada' : 'pendiente')) === 'completada').length, total: enHora.length };
     });
   } else if (periodo === 'semana') {
     const dias = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -76,7 +77,7 @@ function calcularDatosPeriodo(tareas: Tarea[], periodo: Periodo) {
         const adj = d === 0 ? 6 : d - 1;
         return adj === i;
       });
-      return { label, completadas: enDia.filter(t => t.completada).length, total: enDia.length };
+      return { label, completadas: enDia.filter(t => (t.estado ?? (t.completada ? 'completada' : 'pendiente')) === 'completada').length, total: enDia.length };
     });
   } else if (periodo === 'mes') {
     barras = ['S1', 'S2', 'S3', 'S4'].map((label, i) => {
@@ -85,22 +86,21 @@ function calcularDatosPeriodo(tareas: Tarea[], periodo: Periodo) {
         const d = new Date(t.due_at).getDate();
         return Math.floor((d - 1) / 7) === i;
       });
-      return { label, completadas: enSemana.filter(t => t.completada).length, total: enSemana.length };
+      return { label, completadas: enSemana.filter(t => (t.estado ?? (t.completada ? 'completada' : 'pendiente')) === 'completada').length, total: enSemana.length };
     });
   } else {
     const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
     barras = meses.slice(0, ahora.getMonth() + 1).map((label, i) => {
       const enMes = filtradas.filter(t => t.due_at && new Date(t.due_at).getMonth() === i);
-      return { label, completadas: enMes.filter(t => t.completada).length, total: enMes.length };
+      return { label, completadas: enMes.filter(t => (t.estado ?? (t.completada ? 'completada' : 'pendiente')) === 'completada').length, total: enMes.length };
     });
   }
 
   // Línea de tendencia (% completado por barra)
   const linea = barras.map(b => b.total > 0 ? Math.round((b.completadas / b.total) * 100) : 0);
 
-  // Tipos (por ahora todas son 'libre' hasta que el backend tenga tipo)
   const tipos: Record<TipoTarea, number> = { tarea: 0, habito: 0, evento: 0, libre: 0 };
-  filtradas.forEach(() => { tipos.libre += 1; });
+  filtradas.forEach(t => { tipos[t.tipo ?? 'libre'] += 1; });
 
   return {
     barras,
@@ -255,14 +255,14 @@ function Card({ title, subtitle, children }: { title: string; subtitle?: string;
 
 function LogroItem({ logro, theme }: { logro: Logro; theme: any }) {
   return (
-    <View style={[styles.logroItem, { borderColor: theme.border }]}>
-      <View style={[styles.logroIcon, { backgroundColor: theme.primaryMuted }]}>
-        <Text style={{ fontSize: 18 }}>🏆</Text>
+    <View style={[styles.logroItem, { borderColor: theme.border }]}> 
+      <View style={[styles.logroIcon, { backgroundColor: theme.primaryMuted, alignItems: 'center', justifyContent: 'center' }]}> 
+        <FontAwesome name="trophy" size={24} color={theme.primary} />
       </View>
       <View style={styles.logroText}>
         <Text style={[styles.logroTitulo, { color: theme.textPrimary }]}>{logro.titulo}</Text>
         <Text style={[styles.logroDesc, { color: theme.textSecondary }]}>{logro.descripcion}</Text>
-        <Text style={[styles.logroFecha, { color: theme.textTertiary }]}>
+        <Text style={[styles.logroFecha, { color: theme.textTertiary }]}> 
           {new Date(logro.fecha_desbloqueo).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}
         </Text>
       </View>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -14,24 +14,53 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
+import type { EstadoTarea, PrioridadTarea, TipoTarea } from '../services/taskService';
 
 
 export interface NuevaTarea {
   titulo: string;
   descripcion?: string;
   due_at?: string;  // ISO string
+  tipo?: TipoTarea;
+  prioridad?: PrioridadTarea;
+  estado?: EstadoTarea;
 }
 
 interface Props {
   visible: boolean;
   onClose: () => void;
   onSave: (tarea: NuevaTarea) => Promise<void>;
+  initialTask?: {
+    titulo: string;
+    descripcion?: string | null;
+    due_at?: string | null;
+    tipo?: TipoTarea | null;
+    prioridad?: PrioridadTarea | null;
+    estado?: EstadoTarea | null;
+  } | null;
+  mode?: 'create' | 'edit';
 }
 
 
 const DIAS_SEMANA = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const HORAS = Array.from({ length: 24 }, (_, i) => `${i < 10 ? '0' : ''}${i}:00`);
+const TIPOS: Array<{ value: TipoTarea; label: string }> = [
+  { value: 'tarea', label: 'Tarea' },
+  { value: 'habito', label: 'Hábito' },
+  { value: 'evento', label: 'Evento' },
+  { value: 'libre', label: 'Libre' },
+];
+const PRIORIDADES: Array<{ value: PrioridadTarea; label: string }> = [
+  { value: 0, label: 'Baja' },
+  { value: 1, label: 'Media' },
+  { value: 2, label: 'Alta' },
+];
+const ESTADOS: Array<{ value: EstadoTarea; label: string }> = [
+  { value: 'pendiente', label: 'Pendiente' },
+  { value: 'completada', label: 'Completada' },
+  { value: 'abandonada', label: 'Abandonada' },
+];
 
 function getNextDays(n: number): Date[] {
   return Array.from({ length: n }, (_, i) => {
@@ -53,7 +82,7 @@ function toISO(date: Date, hora: string): string {
 }
 
 
-export default function NewTaskModal({ visible, onClose, onSave }: Props) {
+export default function NewTaskModal({ visible, onClose, onSave, initialTask, mode = 'create' }: Props) {
   const { theme } = useTheme();
   const shadows = makeShadows(theme.shadowColor);
 
@@ -62,10 +91,40 @@ export default function NewTaskModal({ visible, onClose, onSave }: Props) {
   const [withDueDate, setWithDueDate] = useState(false);
   const [selectedDay, setSelectedDay] = useState<Date>(new Date());
   const [selectedHora, setSelectedHora] = useState('18:00');
+  const [tipo, setTipo] = useState<TipoTarea>('libre');
+  const [prioridad, setPrioridad] = useState<PrioridadTarea>(0);
+  const [estado, setEstado] = useState<EstadoTarea>('pendiente');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   const nextDays = getNextDays(14);
+  const isEditMode = mode === 'edit';
+
+  useEffect(() => {
+    if (!visible) return;
+
+    setTitulo(initialTask?.titulo ?? '');
+    setDescripcion(initialTask?.descripcion ?? '');
+    setTipo(initialTask?.tipo ?? 'libre');
+    setPrioridad(initialTask?.prioridad ?? 0);
+    setEstado(initialTask?.estado ?? 'pendiente');
+    setError('');
+
+    if (initialTask?.due_at) {
+      const dueDate = new Date(initialTask.due_at);
+      if (!Number.isNaN(dueDate.getTime())) {
+        const hours = dueDate.getHours();
+        setWithDueDate(true);
+        setSelectedDay(dueDate);
+        setSelectedHora(`${hours < 10 ? '0' : ''}${hours}:00`);
+        return;
+      }
+    }
+
+    setWithDueDate(false);
+    setSelectedDay(new Date());
+    setSelectedHora('18:00');
+  }, [initialTask, visible]);
 
   const handleClose = () => {
     // Reset state
@@ -74,6 +133,9 @@ export default function NewTaskModal({ visible, onClose, onSave }: Props) {
     setWithDueDate(false);
     setSelectedDay(new Date());
     setSelectedHora('18:00');
+    setTipo('libre');
+    setPrioridad(0);
+    setEstado('pendiente');
     setError('');
     onClose();
   };
@@ -89,6 +151,9 @@ export default function NewTaskModal({ visible, onClose, onSave }: Props) {
         titulo: titulo.trim(),
         descripcion: descripcion.trim() || undefined,
         due_at: withDueDate ? toISO(selectedDay, selectedHora) : undefined,
+        tipo,
+        prioridad,
+        estado,
       };
       await onSave(nueva);
       handleClose();
@@ -113,7 +178,9 @@ export default function NewTaskModal({ visible, onClose, onSave }: Props) {
 
           {/* Header */}
           <View style={styles.sheetHeader}>
-            <Text style={[styles.sheetTitle, { color: theme.textPrimary }]}>Nueva tarea</Text>
+            <Text style={[styles.sheetTitle, { color: theme.textPrimary }]}>
+              {isEditMode ? 'Editar tarea' : 'Nueva tarea'}
+            </Text>
             <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
               <Text style={[styles.closeBtnText, { color: theme.textTertiary }]}>✕</Text>
             </TouchableOpacity>
@@ -169,6 +236,92 @@ export default function NewTaskModal({ visible, onClose, onSave }: Props) {
                 numberOfLines={3}
                 textAlignVertical="top"
               />
+            </View>
+
+            {/* Tipo */}
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>TIPO</Text>
+              <View style={styles.optionGrid}>
+                {TIPOS.map(option => {
+                  const selected = tipo === option.value;
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.optionChip,
+                        {
+                          backgroundColor: selected ? theme.primaryMuted : theme.surfaceElevated,
+                          borderColor: selected ? theme.primary : theme.border,
+                        },
+                      ]}
+                      onPress={() => setTipo(option.value)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.optionText, { color: selected ? theme.primary : theme.textSecondary }]}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Prioridad */}
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>PRIORIDAD</Text>
+              <View style={styles.optionGrid}>
+                {PRIORIDADES.map(option => {
+                  const selected = prioridad === option.value;
+                  const color = option.value === 2 ? theme.error : option.value === 1 ? theme.warning : theme.textSecondary;
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.optionChip,
+                        {
+                          backgroundColor: selected ? `${color}20` : theme.surfaceElevated,
+                          borderColor: selected ? `${color}80` : theme.border,
+                        },
+                      ]}
+                      onPress={() => setPrioridad(option.value)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.optionText, { color: selected ? color : theme.textSecondary }]}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Estado */}
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>ESTADO</Text>
+              <View style={styles.optionGrid}>
+                {ESTADOS.map(option => {
+                  const selected = estado === option.value;
+                  const color = option.value === 'completada' ? theme.success : option.value === 'abandonada' ? theme.error : theme.warning;
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.optionChip,
+                        {
+                          backgroundColor: selected ? `${color}20` : theme.surfaceElevated,
+                          borderColor: selected ? `${color}80` : theme.border,
+                        },
+                      ]}
+                      onPress={() => setEstado(option.value)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.optionText, { color: selected ? color : theme.textSecondary }]}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
 
             {/* Fecha límite toggle */}
@@ -278,7 +431,7 @@ export default function NewTaskModal({ visible, onClose, onSave }: Props) {
               {saving
                 ? <ActivityIndicator color={titulo.trim() ? theme.textInverse : theme.textTertiary} size="small" />
                 : <Text style={[styles.saveBtnText, { color: titulo.trim() ? theme.textInverse : theme.textTertiary }]}>
-                    Crear tarea
+                    {isEditMode ? 'Guardar cambios' : 'Crear tarea'}
                   </Text>
               }
             </TouchableOpacity>
@@ -398,6 +551,25 @@ const styles = StyleSheet.create({
   chipRow: {
     gap: spacing.sm,
     paddingVertical: spacing.xs,
+  },
+  optionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  optionChip: {
+    minHeight: 38,
+    minWidth: 88,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  optionText: {
+    fontSize: typography.sm,
+    fontWeight: typography.semibold,
   },
   dayChip: {
     paddingHorizontal: spacing.md,

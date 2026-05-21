@@ -10,6 +10,11 @@ import {
   Alert,
   AppState,
   Image,
+  Modal,
+  Pressable,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,62 +22,340 @@ import { useUser } from '@clerk/expo';
 import { useKairosToken } from '../hooks/useKairosToken';
 import { useTheme } from '../context/ThemeContext';
 import { typography, spacing, radii, makeShadows } from '../styles/theme';
-import { listarTareas, actualizarTarea, eliminarTarea, crearTarea, type Tarea } from '../services/taskService';
+import { listarTareas, actualizarTarea, crearTarea, type EstadoTarea, type PrioridadTarea, type Tarea, type TipoTarea } from '../services/taskService';
 import { listarNotificaciones } from '../services/notificationsService';
 import NewTaskModal, { NuevaTarea } from '../components/NewTaskModal';
 import NotificationsModal from '../components/NotificationsModal';
 
+const TIPO_LABELS: Record<TipoTarea, string> = {
+  tarea: 'Tarea',
+  habito: 'Hábito',
+  evento: 'Evento',
+  libre: 'Libre',
+};
 
-function TaskCard({ task, onToggle, onDelete }: {
+const PRIORIDAD_LABELS: Record<PrioridadTarea, string> = {
+  0: 'Baja',
+  1: 'Media',
+  2: 'Alta',
+};
+
+function getTaskEstado(task: Tarea): EstadoTarea {
+  return task.estado ?? (task.completada ? 'completada' : 'pendiente');
+}
+
+function isTaskCompleted(task: Tarea) {
+  return getTaskEstado(task) === 'completada';
+}
+
+function isTaskAbandoned(task: Tarea) {
+  return getTaskEstado(task) === 'abandonada';
+}
+
+function formatTimeInput(date: Date) {
+  const h = date.getHours();
+  const m = date.getMinutes();
+  return `${h < 10 ? '0' : ''}${h}:${m < 10 ? '0' : ''}${m}`;
+}
+
+function parseTimeToISO(time: string, baseDate = new Date()) {
+  const match = time.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+
+  const date = new Date(baseDate);
+  date.setHours(hours, minutes, 0, 0);
+  return date.toISOString();
+}
+
+function formatTaskTimeRange(task: Tarea) {
+  const completedAt = task.completed_at ?? (isTaskCompleted(task) ? task.updated_at : null);
+  if (!completedAt) return null;
+
+  const end = new Date(completedAt);
+  if (Number.isNaN(end.getTime())) return null;
+
+  const start = task.started_at ? new Date(task.started_at) : new Date(end.getTime() - 30 * 60000);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  return `${formatTimeInput(start)} – ${formatTimeInput(end)}`;
+}
+
+function showTaskDetails(task: Tarea) {
+  const estado = getTaskEstado(task);
+  if (estado === 'completada') {
+    const completedAt = task.completed_at ?? task.updated_at;
+    const end = completedAt ? new Date(completedAt) : null;
+    const start = task.started_at
+      ? new Date(task.started_at)
+      : end && !Number.isNaN(end.getTime())
+      ? new Date(end.getTime() - 30 * 60000)
+      : null;
+
+    Alert.alert(
+      task.titulo,
+      start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())
+        ? `Inicio: ${formatTimeInput(start)}\nFin: ${formatTimeInput(end)}`
+        : 'No hay horario registrado para esta tarea.'
+    );
+    return;
+  }
+
+  if (estado === 'abandonada') {
+    Alert.alert(
+      task.titulo,
+      task.abandon_reason ? `Razón de abandono:\n${task.abandon_reason}` : 'No hay razón registrada para esta tarea.'
+    );
+  }
+}
+
+function TaskCard({ task, onEdit, onComplete, onAbandon }: {
   task: Tarea;
-  onToggle: () => void;
-  onDelete: () => void;
+  onEdit: () => void;
+  onComplete: () => void;
+  onAbandon: () => void;
 }) {
   const { theme } = useTheme();
+  const estado = getTaskEstado(task);
+  const completada = estado === 'completada';
+  const abandonada = estado === 'abandonada';
+  const tipo = task.tipo ?? 'libre';
+  const prioridad = task.prioridad ?? 0;
   const statusConfig = {
-    false: { label: 'Pendiente', color: theme.textSecondary, bg: theme.surfaceElevated },
-    true:  { label: 'Completada', color: theme.success, bg: theme.successMuted },
+    pendiente: { label: 'Pendiente', color: theme.warning, bg: theme.surfaceElevated },
+    completada: { label: 'Completada', color: theme.success, bg: theme.successMuted },
+    abandonada: { label: 'Abandonada', color: theme.error, bg: theme.errorMuted },
   };
-  const status = statusConfig[String(task.completada) as 'false' | 'true'];
+  const priorityColor = prioridad === 2 ? theme.error : prioridad === 1 ? theme.warning : theme.textSecondary;
+  const status = statusConfig[estado];
 
   return (
-    <TouchableOpacity
-      style={[styles.taskCard, { backgroundColor: theme.surface, borderColor: theme.border }, task.completada && styles.taskCardDone]}
-      onPress={onToggle}
-      onLongPress={() => Alert.alert('Eliminar tarea', `¿Eliminar "${task.titulo}"?`, [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Eliminar', style: 'destructive', onPress: onDelete },
-      ])}
-      activeOpacity={0.75}
+    <View
+      style={[styles.taskCard, { backgroundColor: theme.surface, borderColor: theme.border }, (completada || abandonada) && styles.taskCardDone]}
     >
-      <View style={styles.taskCardLeft}>
-        <View style={[styles.prioDot, { backgroundColor: task.completada ? theme.success : theme.warning }]} />
-        <Ionicons
-          name={task.completada ? 'checkmark-circle' : 'square-outline'}
-          size={18}
-          color={task.completada ? theme.success : theme.textSecondary}
-          style={styles.taskIconStyle}
-        />
-        <View style={styles.taskInfo}>
-          <Text style={[styles.taskTitle, { color: theme.textPrimary }, task.completada && { textDecorationLine: 'line-through', color: theme.textTertiary }]}>
-            {task.titulo}
-          </Text>
-          {task.descripcion && (
-            <Text style={[styles.taskDate, { color: theme.textTertiary }]} numberOfLines={1}>
-              {task.descripcion}
+      <TouchableOpacity
+        style={styles.taskCardMain}
+        onPress={() => showTaskDetails(task)}
+        disabled={!completada && !abandonada}
+        activeOpacity={0.75}
+      >
+      <View style={styles.taskCardHeader}>
+        <View style={styles.taskCardLeft}>
+          <View style={[styles.prioDot, { backgroundColor: completada ? theme.success : abandonada ? theme.error : priorityColor }]} />
+          <Ionicons
+            name={completada ? 'checkmark-circle' : abandonada ? 'close-circle' : 'square-outline'}
+            size={18}
+            color={completada ? theme.success : abandonada ? theme.error : theme.textSecondary}
+            style={styles.taskIconStyle}
+          />
+          <View style={styles.taskInfo}>
+            <Text style={[styles.taskTitle, { color: theme.textPrimary }, (completada || abandonada) && { textDecorationLine: 'line-through', color: theme.textTertiary }]}>
+              {task.titulo}
             </Text>
-          )}
-          {task.due_at && (
-            <Text style={[styles.taskDate, { color: theme.textTertiary }]}>
-              {new Date(task.due_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-            </Text>
-          )}
+            {task.descripcion && (
+              <Text style={[styles.taskDate, { color: theme.textTertiary }]} numberOfLines={1}>
+                {task.descripcion}
+              </Text>
+            )}
+            {task.due_at && (
+              <Text style={[styles.taskDate, { color: theme.textTertiary }]}>
+                {new Date(task.due_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              </Text>
+            )}
+          </View>
+        </View>
+        <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
+          <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
         </View>
       </View>
-      <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
-        <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
+
+      <View style={styles.taskMetaRow}>
+        <View style={[styles.metaBadge, { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '40' }]}>
+          <Text style={[styles.metaText, { color: theme.primary }]}>{TIPO_LABELS[tipo]}</Text>
+        </View>
+        <View style={[styles.metaBadge, { backgroundColor: `${priorityColor}18`, borderColor: `${priorityColor}55` }]}>
+          <Text style={[styles.metaText, { color: priorityColor }]}>Prioridad {PRIORIDAD_LABELS[prioridad]}</Text>
+        </View>
+        {formatTaskTimeRange(task) && (
+          <View style={[styles.metaBadge, { backgroundColor: theme.successMuted, borderColor: theme.success + '55' }]}>
+            <Text style={[styles.metaText, { color: theme.success }]}>Hecha {formatTaskTimeRange(task)}</Text>
+          </View>
+        )}
+        {task.abandon_reason && (
+          <View style={[styles.metaBadge, { backgroundColor: theme.errorMuted, borderColor: theme.error + '55' }]}>
+            <Text style={[styles.metaText, { color: theme.error }]} numberOfLines={1}>
+              {task.abandon_reason}
+            </Text>
+          </View>
+        )}
       </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+
+      <View style={styles.taskActions}>
+        <TouchableOpacity
+          style={[styles.taskActionBtn, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
+          onPress={onEdit}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="create-outline" size={15} color={theme.textSecondary} />
+          <Text style={[styles.taskActionText, { color: theme.textSecondary }]}>Editar</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.taskActionBtn,
+            { backgroundColor: completada ? theme.surfaceElevated : theme.successMuted, borderColor: completada ? theme.border : theme.success + '50' },
+          ]}
+          onPress={onComplete}
+          disabled={completada}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="checkmark-circle-outline" size={15} color={completada ? theme.textTertiary : theme.success} />
+          <Text style={[styles.taskActionText, { color: completada ? theme.textTertiary : theme.success }]}>
+            {completada ? 'Completada' : 'Completar'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.taskActionBtn, { backgroundColor: abandonada ? theme.errorMuted : theme.surfaceElevated, borderColor: theme.error + '40' }]}
+          onPress={onAbandon}
+          disabled={abandonada}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="close-circle-outline" size={15} color={theme.error} />
+          <Text style={[styles.taskActionText, { color: theme.error }]}>{abandonada ? 'Abandonada' : 'Abandonar'}</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function CompletionModal({
+  visible,
+  task,
+  startTime,
+  endTime,
+  error,
+  onChangeStart,
+  onChangeEnd,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  task: Tarea | null;
+  startTime: string;
+  endTime: string;
+  error: string;
+  onChangeStart: (value: string) => void;
+  onChangeEnd: (value: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const { theme } = useTheme();
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.centerModalWrapper}>
+        <View style={[styles.actionModal, { backgroundColor: theme.bg, borderColor: theme.border }]}>
+          <Text style={[styles.actionModalTitle, { color: theme.textPrimary }]}>Completar tarea</Text>
+          <Text style={[styles.actionModalSub, { color: theme.textSecondary }]} numberOfLines={2}>
+            {task?.titulo}
+          </Text>
+
+          <View style={styles.timeInputsRow}>
+            <View style={styles.timeField}>
+              <Text style={[styles.actionLabel, { color: theme.textSecondary }]}>Inicio aprox.</Text>
+              <TextInput
+                style={[styles.timeInput, { color: theme.textPrimary, borderColor: theme.border, backgroundColor: theme.surfaceElevated }]}
+                value={startTime}
+                onChangeText={onChangeStart}
+                placeholder="09:30"
+                placeholderTextColor={theme.textTertiary}
+                keyboardType="numbers-and-punctuation"
+              />
+            </View>
+            <View style={styles.timeField}>
+              <Text style={[styles.actionLabel, { color: theme.textSecondary }]}>Fin aprox.</Text>
+              <TextInput
+                style={[styles.timeInput, { color: theme.textPrimary, borderColor: theme.border, backgroundColor: theme.surfaceElevated }]}
+                value={endTime}
+                onChangeText={onChangeEnd}
+                placeholder="10:30"
+                placeholderTextColor={theme.textTertiary}
+                keyboardType="numbers-and-punctuation"
+              />
+            </View>
+          </View>
+
+          {error ? <Text style={[styles.actionError, { color: theme.error }]}>{error}</Text> : null}
+
+          <View style={styles.actionModalButtons}>
+            <TouchableOpacity style={[styles.secondaryBtn, { borderColor: theme.border }]} onPress={onClose}>
+              <Text style={[styles.secondaryBtnText, { color: theme.textSecondary }]}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: theme.success }]} onPress={onSave}>
+              <Text style={[styles.primaryBtnText, { color: theme.textInverse }]}>Guardar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function AbandonModal({
+  visible,
+  task,
+  reason,
+  error,
+  onChangeReason,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  task: Tarea | null;
+  reason: string;
+  error: string;
+  onChangeReason: (value: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const { theme } = useTheme();
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.centerModalWrapper}>
+        <View style={[styles.actionModal, { backgroundColor: theme.bg, borderColor: theme.border }]}>
+          <Text style={[styles.actionModalTitle, { color: theme.textPrimary }]}>Abandonar tarea</Text>
+          <Text style={[styles.actionModalSub, { color: theme.textSecondary }]} numberOfLines={2}>
+            {task?.titulo}
+          </Text>
+          <Text style={[styles.actionLabel, { color: theme.textSecondary }]}>Razón</Text>
+          <TextInput
+            style={[styles.reasonInput, { color: theme.textPrimary, borderColor: theme.border, backgroundColor: theme.surfaceElevated }]}
+            value={reason}
+            onChangeText={onChangeReason}
+            placeholder="¿Por qué la abandonaste?"
+            placeholderTextColor={theme.textTertiary}
+            multiline
+            textAlignVertical="top"
+          />
+
+          {error ? <Text style={[styles.actionError, { color: theme.error }]}>{error}</Text> : null}
+
+          <View style={styles.actionModalButtons}>
+            <TouchableOpacity style={[styles.secondaryBtn, { borderColor: theme.border }]} onPress={onClose}>
+              <Text style={[styles.secondaryBtnText, { color: theme.textSecondary }]}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: theme.error }]} onPress={onSave}>
+              <Text style={[styles.primaryBtnText, { color: theme.textInverse }]}>Abandonar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -108,11 +391,19 @@ export default function HomeScreen({ onAvatarPress }: Props) {
   const inicial = nombre[0]?.toUpperCase() ?? '?';
   const fotoUrl = user?.imageUrl ?? null;
 
-  const [filter, setFilter] = useState<'todas' | 'pendiente' | 'completada'>('todas');
+  const [filter, setFilter] = useState<'todas' | 'pendiente' | 'completada' | 'abandonada'>('todas');
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [editingTask, setEditingTask] = useState<Tarea | null>(null);
+  const [completingTask, setCompletingTask] = useState<Tarea | null>(null);
+  const [completionStart, setCompletionStart] = useState('');
+  const [completionEnd, setCompletionEnd] = useState('');
+  const [completionError, setCompletionError] = useState('');
+  const [abandoningTask, setAbandoningTask] = useState<Tarea | null>(null);
+  const [abandonReason, setAbandonReason] = useState('');
+  const [abandonError, setAbandonError] = useState('');
   const [showNotifs, setShowNotifs] = useState(false);
   const [notificaciones, setNotificaciones] = useState(0);
 
@@ -162,41 +453,127 @@ export default function HomeScreen({ onAvatarPress }: Props) {
     return () => clearInterval(intervalId);
   }, [cargarNotificacionesSinLeer]);
 
-  const handleToggle = async (tarea: Tarea) => {
+  const openCompleteModal = (tarea: Tarea) => {
+    const end = new Date();
+    const start = new Date(end);
+    start.setMinutes(start.getMinutes() - 30);
+    setCompletingTask(tarea);
+    setCompletionStart(formatTimeInput(start));
+    setCompletionEnd(formatTimeInput(end));
+    setCompletionError('');
+  };
+
+  const closeCompleteModal = () => {
+    setCompletingTask(null);
+    setCompletionStart('');
+    setCompletionEnd('');
+    setCompletionError('');
+  };
+
+  const handleComplete = async () => {
     try {
       if (!kairosToken) return;
-      const actualizada = await actualizarTarea(kairosToken, tarea.id_tarea, { completada: !tarea.completada });
+      if (!completingTask) return;
+
+      const startedAt = parseTimeToISO(completionStart);
+      const completedAt = parseTimeToISO(completionEnd);
+      if (!startedAt || !completedAt) {
+        setCompletionError('Usa formato HH:MM, por ejemplo 09:30');
+        return;
+      }
+      if (new Date(startedAt).getTime() > new Date(completedAt).getTime()) {
+        setCompletionError('La hora de inicio debe ser antes que la de fin');
+        return;
+      }
+
+      const actualizada = await actualizarTarea(kairosToken, completingTask.id_tarea, {
+        completada: true,
+        estado: 'completada',
+        started_at: startedAt,
+        completed_at: completedAt,
+      });
+      setTareas(prev => prev.map(t => t.id_tarea === actualizada.id_tarea ? {
+        ...t,
+        ...actualizada,
+        started_at: actualizada.started_at ?? startedAt,
+        completed_at: actualizada.completed_at ?? completedAt,
+      } : t));
+      closeCompleteModal();
+    } catch (err: any) { Alert.alert('Error', err.message); }
+  };
+
+  const openAbandonModal = (tarea: Tarea) => {
+    setAbandoningTask(tarea);
+    setAbandonReason('');
+    setAbandonError('');
+  };
+
+  const closeAbandonModal = () => {
+    setAbandoningTask(null);
+    setAbandonReason('');
+    setAbandonError('');
+  };
+
+  const handleAbandon = async () => {
+    try {
+      if (!kairosToken) return;
+      if (!abandoningTask) return;
+      if (!abandonReason.trim()) {
+        setAbandonError('Cuéntanos la razón para que el agente aprenda de esto');
+        return;
+      }
+
+      const abandonedAt = new Date().toISOString();
+      const reason = abandonReason.trim();
+      const actualizada = await actualizarTarea(kairosToken, abandoningTask.id_tarea, {
+        completada: false,
+        estado: 'abandonada',
+        abandoned_at: abandonedAt,
+        abandon_reason: reason,
+      });
+      setTareas(prev => prev.map(t => t.id_tarea === actualizada.id_tarea ? {
+        ...t,
+        ...actualizada,
+        abandoned_at: actualizada.abandoned_at ?? abandonedAt,
+        abandon_reason: actualizada.abandon_reason ?? reason,
+      } : t));
+      closeAbandonModal();
+    } catch (err: any) { Alert.alert('Error', err.message); }
+  };
+
+  const handleEdit = async (tarea: Tarea, cambios: NuevaTarea) => {
+    try {
+      if (!kairosToken) return;
+      const actualizada = await actualizarTarea(kairosToken, tarea.id_tarea, cambios);
       setTareas(prev => prev.map(t => t.id_tarea === actualizada.id_tarea ? actualizada : t));
-    } catch (err: any) { Alert.alert('Error', err.message); }
+      setEditingTask(null);
+    } catch (err: any) {
+      throw err;
+    }
   };
 
-  const handleDelete = async (id: string) => {
-    try {
-      if (!kairosToken) return;
-      await eliminarTarea(kairosToken, id);
-      setTareas(prev => prev.filter(t => t.id_tarea !== id));
-    } catch (err: any) { Alert.alert('Error', err.message); }
-  };
-
-  const completadas = tareas.filter(t => t.completada).length;
+  const completadas = tareas.filter(isTaskCompleted).length;
   const total = tareas.length;
-  const pendientes = total - completadas;
+  const pendientes = tareas.filter(t => getTaskEstado(t) === 'pendiente').length;
   const progressPct = total > 0 ? Math.round((completadas / total) * 100) : 0;
   const hoy = new Date().toDateString();
   const completadasHoy = tareas.filter(t =>
-    t.completada && t.updated_at && new Date(t.updated_at).toDateString() === hoy
+    isTaskCompleted(t) && t.updated_at && new Date(t.updated_at).toDateString() === hoy
   ).length;
 
   const filtered = filter === 'todas'
     ? tareas
     : filter === 'completada'
-    ? tareas.filter(t => t.completada)
-    : tareas.filter(t => !t.completada);
+    ? tareas.filter(isTaskCompleted)
+    : filter === 'abandonada'
+    ? tareas.filter(isTaskAbandoned)
+    : tareas.filter(t => getTaskEstado(t) === 'pendiente');
 
   const FILTERS: Array<{ key: typeof filter; label: string }> = [
     { key: 'todas',      label: 'Todas' },
     { key: 'pendiente',  label: 'Pendientes' },
     { key: 'completada', label: 'Completadas' },
+    { key: 'abandonada', label: 'Abandonadas' },
   ];
 
   return (
@@ -322,8 +699,9 @@ export default function HomeScreen({ onAvatarPress }: Props) {
               <TaskCard
                 key={task.id_tarea}
                 task={task}
-                onToggle={() => handleToggle(task)}
-                onDelete={() => handleDelete(task.id_tarea)}
+                onEdit={() => setEditingTask(task)}
+                onComplete={() => openCompleteModal(task)}
+                onAbandon={() => openAbandonModal(task)}
               />
             ))}
           </View>
@@ -351,6 +729,39 @@ export default function HomeScreen({ onAvatarPress }: Props) {
           setTareas(prev => [creada, ...prev]);
           setModalVisible(false);
         }}
+      />
+
+      <NewTaskModal
+        visible={!!editingTask}
+        mode="edit"
+        initialTask={editingTask}
+        onClose={() => setEditingTask(null)}
+        onSave={async (cambios: NuevaTarea) => {
+          if (!editingTask) return;
+          await handleEdit(editingTask, cambios);
+        }}
+      />
+
+      <CompletionModal
+        visible={!!completingTask}
+        task={completingTask}
+        startTime={completionStart}
+        endTime={completionEnd}
+        error={completionError}
+        onChangeStart={value => { setCompletionStart(value); setCompletionError(''); }}
+        onChangeEnd={value => { setCompletionEnd(value); setCompletionError(''); }}
+        onClose={closeCompleteModal}
+        onSave={handleComplete}
+      />
+
+      <AbandonModal
+        visible={!!abandoningTask}
+        task={abandoningTask}
+        reason={abandonReason}
+        error={abandonError}
+        onChangeReason={value => { setAbandonReason(value); setAbandonError(''); }}
+        onClose={closeAbandonModal}
+        onSave={handleAbandon}
       />
 
       <NotificationsModal
@@ -414,13 +825,15 @@ const styles = StyleSheet.create({
 
   sectionTitle: { fontSize: typography.lg, fontWeight: typography.bold, marginBottom: spacing.md },
 
-  filterRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.base },
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.base },
   filterTab: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radii.full, borderWidth: 1 },
   filterText: { fontSize: typography.xs, fontWeight: typography.medium },
 
   taskList: { gap: spacing.sm },
-  taskCard: { borderRadius: radii.lg, padding: spacing.base, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  taskCard: { borderRadius: radii.lg, padding: spacing.base, borderWidth: 1, gap: spacing.md },
   taskCardDone: { opacity: 0.55 },
+  taskCardMain: { gap: spacing.md },
+  taskCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   taskCardLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
   prioDot: { width: 6, height: 6, borderRadius: 3 },
   taskIconStyle: { marginRight: 2 },
@@ -429,6 +842,87 @@ const styles = StyleSheet.create({
   taskDate: { fontSize: typography.xs, marginTop: 2 },
   statusBadge: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radii.full, marginLeft: spacing.sm },
   statusText: { fontSize: typography.xs, fontWeight: typography.semibold },
+  taskMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  metaBadge: {
+    borderWidth: 1,
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+  },
+  metaText: { fontSize: typography.xs, fontWeight: typography.semibold },
+  taskActions: { flexDirection: 'row', gap: spacing.xs },
+  taskActionBtn: {
+    flex: 1,
+    minHeight: 36,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: spacing.xs,
+  },
+  taskActionText: { fontSize: typography.xs, fontWeight: typography.semibold },
+
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#00000055',
+  },
+  centerModalWrapper: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  actionModal: {
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  actionModalTitle: { fontSize: typography.lg, fontWeight: typography.bold },
+  actionModalSub: { fontSize: typography.sm, lineHeight: 18 },
+  actionLabel: {
+    fontSize: typography.xs,
+    fontWeight: typography.semibold,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  timeInputsRow: { flexDirection: 'row', gap: spacing.md },
+  timeField: { flex: 1, gap: spacing.xs },
+  timeInput: {
+    minHeight: 44,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    fontSize: typography.base,
+    fontWeight: typography.medium,
+  },
+  reasonInput: {
+    minHeight: 96,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    fontSize: typography.base,
+  },
+  actionError: { fontSize: typography.xs },
+  actionModalButtons: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
+  secondaryBtn: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryBtn: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryBtnText: { fontSize: typography.sm, fontWeight: typography.semibold },
+  primaryBtnText: { fontSize: typography.sm, fontWeight: typography.bold },
 
   errorBox: { alignItems: 'center', marginTop: spacing.xl, gap: spacing.sm },
   errorText: { fontSize: typography.sm, textAlign: 'center' },

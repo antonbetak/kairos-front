@@ -21,73 +21,82 @@ const { width: SCREEN_W } = Dimensions.get('window');
 const CHART_W = SCREEN_W - spacing.base * 4;
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
+type FitnessPeriodo = 1 | 7 | 14 | 30;
 
 const ACTIVITY_ICONS: Record<number, { icon: IoniconsName; label: string }> = {
   1:   { icon: 'bicycle-outline',           label: 'Ciclismo' },
-  2:   { icon: 'bicycle-outline',           label: 'Ciclismo en pista' },
+  14:  { icon: 'bicycle-outline',           label: 'Ciclismo de mano' },
+  15:  { icon: 'bicycle-outline',           label: 'Ciclismo de montaña' },
+  16:  { icon: 'bicycle-outline',           label: 'Ciclismo de ruta' },
+  17:  { icon: 'bicycle-outline',           label: 'Spinning' },
+  18:  { icon: 'bicycle-outline',           label: 'Bicicleta fija' },
+  19:  { icon: 'bicycle-outline',           label: 'Ciclismo urbano' },
   7:   { icon: 'walk-outline',              label: 'Caminata' },
-  8:   { icon: 'barbell-outline',           label: 'Aeróbicos' },
+  8:   { icon: 'walk-outline',              label: 'Correr' },
   9:   { icon: 'body-outline',              label: 'Aeróbicos' },
   10:  { icon: 'body-outline',              label: 'Badminton' },
-  13:  { icon: 'baseball-outline',          label: 'Béisbol' },
-  14:  { icon: 'basketball-outline',        label: 'Baloncesto' },
-  16:  { icon: 'bicycle-outline',           label: 'Ciclismo de montaña' },
-  17:  { icon: 'boat-outline',              label: 'Canotaje' },
+  11:  { icon: 'baseball-outline',          label: 'Béisbol' },
+  12:  { icon: 'basketball-outline',        label: 'Baloncesto' },
+  13:  { icon: 'body-outline',              label: 'Biatlón' },
   20:  { icon: 'body-outline',              label: 'Boxeo' },
   21:  { icon: 'body-outline',              label: 'Calistenia' },
-  22:  { icon: 'bicycle-outline',           label: 'Ciclismo de circuito' },
-  29:  { icon: 'body-outline',              label: 'Elíptica' },
-  31:  { icon: 'body-outline',              label: 'Esgrima' },
-  32:  { icon: 'american-football-outline', label: 'Fútbol americano' },
-  33:  { icon: 'body-outline',              label: 'Frisbee' },
-  34:  { icon: 'body-outline',              label: 'Jardinería' },
-  35:  { icon: 'golf-outline',              label: 'Golf' },
-  37:  { icon: 'body-outline',              label: 'Gimnasia' },
-  38:  { icon: 'barbell-outline',           label: 'Pesas' },
-  41:  { icon: 'body-outline',              label: 'Yoga' },
-  42:  { icon: 'body-outline',              label: 'Patinaje en hielo' },
-  44:  { icon: 'body-outline',              label: 'Saltar la cuerda' },
-  45:  { icon: 'body-outline',              label: 'Kayak' },
-  46:  { icon: 'body-outline',              label: 'Crossfit' },
-  47:  { icon: 'body-outline',              label: 'Kickboxing' },
-  48:  { icon: 'body-outline',              label: 'Patinaje' },
-  50:  { icon: 'body-outline',              label: 'Artes marciales' },
-  51:  { icon: 'body-outline',              label: 'Meditación' },
-  52:  { icon: 'body-outline',              label: 'Artes marciales mixtas' },
-  56:  { icon: 'body-outline',              label: 'Pilates' },
-  57:  { icon: 'body-outline',              label: 'Polo' },
-  59:  { icon: 'body-outline',              label: 'Raquetbol' },
-  60:  { icon: 'boat-outline',              label: 'Remo' },
-  62:  { icon: 'body-outline',              label: 'Rugby' },
-  64:  { icon: 'body-outline',              label: 'Patineta' },
+  22:  { icon: 'body-outline',              label: 'Circuito' },
+  24:  { icon: 'musical-notes-outline',     label: 'Baile' },
+  25:  { icon: 'body-outline',              label: 'Elíptica' },
+  26:  { icon: 'body-outline',              label: 'Esgrima' },
+  27:  { icon: 'american-football-outline', label: 'Fútbol americano' },
+  29:  { icon: 'football-outline',          label: 'Fútbol' },
+  30:  { icon: 'disc-outline',              label: 'Frisbee' },
+  31:  { icon: 'leaf-outline',              label: 'Jardinería' },
+  32:  { icon: 'golf-outline',              label: 'Golf' },
+  33:  { icon: 'body-outline',              label: 'Gimnasia' },
+  35:  { icon: 'walk-outline',              label: 'Senderismo' },
+  38:  { icon: 'home-outline',              label: 'Trabajo en casa' },
+  39:  { icon: 'body-outline',              label: 'Saltar la cuerda' },
+  40:  { icon: 'boat-outline',              label: 'Kayak' },
+  41:  { icon: 'barbell-outline',           label: 'Kettlebell' },
+  42:  { icon: 'body-outline',              label: 'Kickboxing' },
+  44:  { icon: 'body-outline',              label: 'Artes marciales' },
+  45:  { icon: 'body-outline',              label: 'Meditación' },
+  46:  { icon: 'body-outline',              label: 'Artes marciales mixtas' },
+  49:  { icon: 'body-outline',              label: 'Pilates' },
+  51:  { icon: 'body-outline',              label: 'Raquetbol' },
+  52:  { icon: 'trail-sign-outline',        label: 'Escalada' },
+  53:  { icon: 'boat-outline',              label: 'Remo' },
+  54:  { icon: 'boat-outline',              label: 'Máquina de remo' },
+  55:  { icon: 'body-outline',              label: 'Rugby' },
+  56:  { icon: 'walk-outline',              label: 'Trote' },
+  58:  { icon: 'walk-outline',              label: 'Caminadora' },
+  61:  { icon: 'body-outline',              label: 'Patineta' },
+  62:  { icon: 'body-outline',              label: 'Patinaje' },
   65:  { icon: 'snow-outline',              label: 'Esquí alpino' },
-  66:  { icon: 'body-outline',              label: 'Trineo' },
-  68:  { icon: 'snow-outline',              label: 'Snowboard' },
-  69:  { icon: 'body-outline',              label: 'Raquetas de nieve' },
-  71:  { icon: 'football-outline',          label: 'Fútbol' },
+  71:  { icon: 'body-outline',              label: 'Trineo' },
   72:  { icon: 'moon-outline',              label: 'Sueño' },
-  73:  { icon: 'body-outline',              label: 'Squash' },
-  74:  { icon: 'walk-outline',              label: 'Subir escaleras' },
-  75:  { icon: 'body-outline',              label: 'Surf' },
-  76:  { icon: 'body-outline',              label: 'Natación en alberca' },
-  77:  { icon: 'walk-outline',              label: 'Escaleras' },
-  78:  { icon: 'body-outline',              label: 'Natación en mar abierto' },
-  79:  { icon: 'body-outline',              label: 'Natación' },
+  73:  { icon: 'snow-outline',              label: 'Snowboard' },
+  75:  { icon: 'body-outline',              label: 'Raquetas de nieve' },
+  76:  { icon: 'body-outline',              label: 'Squash' },
+  77:  { icon: 'podium-outline',            label: 'Subir escaleras' },
+  78:  { icon: 'podium-outline',            label: 'Escaladora' },
+  81:  { icon: 'body-outline',              label: 'Surf' },
+  82:  { icon: 'water-outline',             label: 'Natación' },
+  83:  { icon: 'water-outline',             label: 'Natación en alberca' },
+  84:  { icon: 'water-outline',             label: 'Natación en mar abierto' },
   80:  { icon: 'barbell-outline',           label: 'Entrenamiento de fuerza' },
-  82:  { icon: 'tennisball-outline',        label: 'Tenis' },
-  83:  { icon: 'walk-outline',              label: 'Caminadora' },
-  84:  { icon: 'walk-outline',              label: 'Senderismo' },
-  87:  { icon: 'body-outline',              label: 'Voleibol' },
-  88:  { icon: 'walk-outline',              label: 'Caminar' },
-  89:  { icon: 'water-outline',             label: 'Polo acuático' },
-  90:  { icon: 'body-outline',              label: 'Levantamiento de pesas' },
-  91:  { icon: 'body-outline',              label: 'Windsurf' },
-  92:  { icon: 'body-outline',              label: 'Yoga' },
+  87:  { icon: 'tennisball-outline',        label: 'Tenis' },
+  88:  { icon: 'walk-outline',              label: 'Caminadora' },
+  89:  { icon: 'body-outline',              label: 'Voleibol' },
+  96:  { icon: 'water-outline',             label: 'Polo acuático' },
+  97:  { icon: 'barbell-outline',           label: 'Levantamiento de pesas' },
+  99:  { icon: 'body-outline',              label: 'Windsurf' },
+  100: { icon: 'body-outline',              label: 'Yoga' },
+  101: { icon: 'body-outline',              label: 'Zumba' },
   93:  { icon: 'walk-outline',              label: 'Caminata' },
-  94:  { icon: 'body-outline',              label: 'Zumba' },
-  97:  { icon: 'body-outline',              label: 'Escalada' },
-  108: { icon: 'body-outline',              label: 'Zumba' },
-  115: { icon: 'bicycle-outline',           label: 'Ciclismo indoor' },
+  94:  { icon: 'walk-outline',              label: 'Caminata nórdica' },
+  95:  { icon: 'walk-outline',              label: 'Caminadora' },
+  108: { icon: 'fitness-outline',           label: 'Actividad' },
+  113: { icon: 'body-outline',              label: 'Crossfit' },
+  114: { icon: 'flash-outline',             label: 'HIIT' },
+  115: { icon: 'timer-outline',             label: 'Intervalos' },
 };
 
 function getActivityInfo(activityType: number): { icon: IoniconsName; label: string } {
@@ -214,7 +223,7 @@ export default function FitnessScreen() {
   const [fitData, setFitData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [periodo, setPeriodo] = useState<7 | 14 | 30>(7);
+  const [periodo, setPeriodo] = useState<FitnessPeriodo>(1);
 
   const cargarFit = useCallback(async () => {
     if (!isSignedIn) {
@@ -227,8 +236,12 @@ export default function FitnessScreen() {
     try {
       const clerkToken = await getToken();
       if (!clerkToken) throw new Error('No hay sesión activa');
-      const end = new Date().toISOString();
-      const start = new Date(Date.now() - periodo * 24 * 60 * 60 * 1000).toISOString();
+      const endDate = new Date();
+      const startDate = periodo === 1
+        ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate())
+        : new Date(Date.now() - periodo * 24 * 60 * 60 * 1000);
+      const end = endDate.toISOString();
+      const start = startDate.toISOString();
       const data = await obtenerFitData(clerkToken, { start, end, bucketDays: 1 });
       setFitData(data);
     } catch (err: any) {
@@ -245,7 +258,9 @@ export default function FitnessScreen() {
 
   // Separar sueño de las demás sesiones
   const sesionesSueno = sessions.filter(s => s.activityType === 72);
-  const sesionesEjercicio = sessions.filter(s => s.activityType !== 72);
+  const sesionesEjercicio = sessions
+    .filter(s => s.activityType !== 72)
+    .sort((a, b) => parseMs(b.startTimeMillis) - parseMs(a.startTimeMillis));
 
   // Calcular total de sueño desde sesiones si no viene como métrica
   const totalSuenoMs = sesionesSueno.reduce((acc, s) => {
@@ -259,7 +274,8 @@ export default function FitnessScreen() {
   const frecuencia   = getMetric(metrics, 'heart');
   const sueno        = getMetric(metrics, 'sleep');
 
-  const PERIODOS: Array<{ key: 7 | 14 | 30; label: string }> = [
+  const PERIODOS: Array<{ key: FitnessPeriodo; label: string }> = [
+    { key: 1,  label: '1 día' },
     { key: 7,  label: '7 días' },
     { key: 14, label: '14 días' },
     { key: 30, label: '30 días' },

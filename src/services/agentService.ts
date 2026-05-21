@@ -22,8 +22,14 @@ function tareaAContexto(tarea: Tarea) {
     id: tarea.id_tarea,
     titulo: tarea.titulo,
     descripcion: tarea.descripcion ?? null,
-    tipo: 'tarea',
+    tipo: tarea.tipo ?? 'tarea',
+    prioridad: tarea.prioridad ?? 0,
+    estado: tarea.estado ?? (tarea.completada ? 'completada' : 'pendiente'),
     fecha_limite: tarea.due_at ?? null,
+    inicio_real: tarea.started_at ?? null,
+    fin_real: tarea.completed_at ?? null,
+    abandonada_en: tarea.abandoned_at ?? null,
+    razon_abandono: tarea.abandon_reason ?? null,
     duracion_estimada_min: 30,
   };
 }
@@ -35,7 +41,10 @@ export async function generarHorario(
   tareas: Tarea[]
 ): Promise<GenerateResponse> {
   const fechaStr = fecha.toISOString().split('T')[0];
-  const tareasActivas = tareas.filter(t => !t.completada);
+  const tareasActivas = tareas.filter(t => (t.estado ?? (t.completada ? 'completada' : 'pendiente')) === 'pendiente');
+  const historialTareas = tareas
+    .filter(t => (t.estado ?? (t.completada ? 'completada' : 'pendiente')) !== 'pendiente')
+    .slice(0, 30);
 
   return apiRequest<GenerateResponse>('/agent/generate', {
     method: 'POST',
@@ -44,6 +53,7 @@ export async function generarHorario(
       id_usuario: idUsuario,
       fecha: fechaStr,
       tareas: tareasActivas.map(tareaAContexto),
+      historial_tareas: historialTareas.map(tareaAContexto),
       metas: [],
       streaks: [],
     },

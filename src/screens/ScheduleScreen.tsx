@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   StatusBar,
   ActivityIndicator,
   Alert,
+  LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/expo';
@@ -23,17 +24,68 @@ import {
   type ScheduleAgentBlock,
 } from '../services/scheduleService';
 import { listarEventos, type EventItem } from '../services/calendarService';
+import { obtenerFitData } from '../services/fitService';
 import { getAccessToken, getStoredUser } from '../store/authStore';
 
 
+
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-const todayIndex = new Date().getDay();
+const NUM_DAYS = 28; // 2 semanas atrás y 2 adelante
+const today = new Date();
+const todayIndex = today.getDay();
 const adjustedToday = todayIndex === 0 ? 6 : todayIndex - 1;
+const START_OFFSET = -14; // 2 semanas atrás
+
+// Genera un array de objetos con info de cada día a mostrar
+function getDaysArray() {
+  const daysArr = [];
+  for (let i = 0; i < NUM_DAYS; i++) {
+    const offset = START_OFFSET + i;
+    const date = new Date(today);
+    date.setDate(today.getDate() + offset);
+    const dow = date.getDay();
+    const adjustedDow = dow === 0 ? 6 : dow - 1;
+    daysArr.push({
+      label: DAYS[adjustedDow],
+      date,
+      dayNum: date.getDate(),
+      monthNum: date.getMonth() + 1,
+      offset,
+      isToday: date.toDateString() === today.toDateString(),
+    });
+  }
+  return daysArr;
+}
 
 const PX_PER_MIN = 1.1;
 const HOUR_HEIGHT = 60 * PX_PER_MIN;
 const START_HOUR = 6;
 const HOUR_COL = 52;
+const TODAY_DAY_INDEX = Math.abs(START_OFFSET);
+const DAY_TAB_WIDTH = 38;
+const DAY_TAB_GAP = spacing.xs;
+const SLEEP_ACTIVITY_TYPE = 72;
+
+const FIT_ACTIVITY_LABELS: Record<number, string> = {
+  1: 'Ciclismo',
+  7: 'Caminata',
+  8: 'Aeróbicos',
+  21: 'Calistenia',
+  29: 'Elíptica',
+  38: 'Pesas',
+  41: 'Yoga',
+  56: 'Pilates',
+  71: 'Fútbol',
+  76: 'Natación',
+  80: 'Entrenamiento de fuerza',
+  82: 'Tenis',
+  83: 'Caminadora',
+  84: 'Senderismo',
+  88: 'Caminar',
+  90: 'Levantamiento de pesas',
+  92: 'Yoga',
+  94: 'Zumba',
+};
 
 function extractHHMM(iso: string): string {
   const d = new Date(iso);
@@ -62,26 +114,37 @@ interface DisplayBlock {
   horaFin: string;
   durationMin: number;
   razon?: string | null;
-  fuente: 'tarea' | 'schedule' | 'agente' | 'google';
+  fuente: 'tarea' | 'schedule' | 'agente' | 'google' | 'fitness' | 'sleep';
   raw?: ScheduleAgentBlock;
 }
 
 function tareaToDisplay(t: Tarea): DisplayBlock | null {
-  if (!t.due_at) return null;
-  const h = new Date(t.due_at).getHours();
+  const estado = t.estado ?? (t.completada ? 'completada' : 'pendiente');
+  if (estado === 'abandonada') return null;
+
+  const usesRealTime = estado === 'completada' && t.started_at && t.completed_at;
+  const startStr = usesRealTime ? t.started_at : t.due_at;
+  if (!startStr) return null;
+
+  const start = new Date(startStr);
+  if (Number.isNaN(start.getTime())) return null;
+
+  const h = start.getHours();
   if (h < START_HOUR || h >= START_HOUR + 16) return null;
-  const horaInicio = extractHHMM(t.due_at);
-  const endMin = h * 60 + new Date(t.due_at).getMinutes() + 30;
-  const endH = Math.floor(endMin / 60);
-  const endM = endMin % 60;
+
+  const end = usesRealTime ? new Date(t.completed_at!) : new Date(start.getTime() + 30 * 60000);
+  if (Number.isNaN(end.getTime()) || end <= start) return null;
+
+  const durationMin = Math.max((end.getTime() - start.getTime()) / 60000, 15);
+
   return {
     id: t.id_tarea,
     titulo: t.titulo,
-    tipo: 'tarea',
-    estado: t.completada ? 'completada' : 'pendiente',
-    horaInicio,
-    horaFin: `${endH < 10 ? '0' : ''}${endH}:${endM < 10 ? '0' : ''}${endM}`,
-    durationMin: 30,
+    tipo: t.tipo ?? 'tarea',
+    estado,
+    horaInicio: extractHHMM(start.toISOString()),
+    horaFin: extractHHMM(end.toISOString()),
+    durationMin,
     fuente: 'tarea',
   };
 }
@@ -147,6 +210,53 @@ function googleToDisplay(e: EventItem): DisplayBlock | null {
   };
 }
 
+function parseFitMs(value: string | number | undefined): number {
+  if (!value) return 0;
+  return typeof value === 'string' ? parseInt(value, 10) : value;
+}
+
+function formatFitTime(date: Date): string {
+  const h = date.getHours();
+  const m = date.getMinutes();
+  return `${h < 10 ? '0' : ''}${h}:${m < 10 ? '0' : ''}${m}`;
+}
+
+function getFitSessionName(session: any): string {
+  if (session.name && session.name !== '') return session.name;
+  if (session.activityType === SLEEP_ACTIVITY_TYPE) return 'Dormido';
+  return FIT_ACTIVITY_LABELS[session.activityType ?? 0] ?? 'Ejercicio';
+}
+
+function fitSessionToDisplay(session: any, selectedDate: Date): DisplayBlock | null {
+  const startMs = parseFitMs(session.startTimeMillis);
+  const endMs = parseFitMs(session.endTimeMillis);
+  if (!startMs || !endMs || endMs <= startMs) return null;
+
+  const dayStart = new Date(selectedDate);
+  dayStart.setHours(START_HOUR, 0, 0, 0);
+  const dayEnd = new Date(selectedDate);
+  dayEnd.setHours(START_HOUR + 16, 0, 0, 0);
+
+  const start = new Date(Math.max(startMs, dayStart.getTime()));
+  const end = new Date(Math.min(endMs, dayEnd.getTime()));
+  if (end <= start) return null;
+
+  const isSleep = session.activityType === SLEEP_ACTIVITY_TYPE;
+  const durationMin = Math.max((end.getTime() - start.getTime()) / 60000, 15);
+
+  return {
+    id: `fit-${isSleep ? 'sleep' : 'exercise'}-${session.id ?? `${startMs}-${endMs}`}`,
+    titulo: getFitSessionName(session),
+    tipo: isSleep ? 'libre' : 'habito',
+    estado: isSleep ? 'sleep' : 'fitness',
+    horaInicio: formatFitTime(start),
+    horaFin: formatFitTime(end),
+    durationMin,
+    razon: `${formatFitTime(new Date(startMs))} – ${formatFitTime(new Date(endMs))}`,
+    fuente: isSleep ? 'sleep' : 'fitness',
+  };
+}
+
 
 function TimelineBlock({
   block,
@@ -172,6 +282,8 @@ function TimelineBlock({
     schedule: { bg: theme.successMuted,    border: theme.success + '50', text: theme.success },
     agente:   { bg: theme.primaryMuted,    border: theme.primary + '40', text: theme.primary },
     google:   { bg: '#4285F420',           border: '#4285F450',          text: '#4285F4' },
+    fitness:  { bg: theme.warning + '18',  border: theme.warning + '55', text: theme.warning },
+    sleep:    { bg: theme.primaryMuted,    border: theme.primary + '55', text: theme.primary },
   };
 
   const topPx = (() => {
@@ -188,7 +300,7 @@ function TimelineBlock({
       style={[styles.block, { top: topPx, height, borderColor: scheme.border, backgroundColor: scheme.bg }]}
       activeOpacity={0.8}
       onPress={() => {
-        if (block.razon || block.fuente === 'google') {
+        if (block.razon || block.fuente === 'google' || block.fuente === 'fitness' || block.fuente === 'sleep') {
           Alert.alert(block.titulo, block.razon ?? `${block.horaInicio} – ${block.horaFin}`);
         }
       }}
@@ -231,16 +343,61 @@ export default function ScheduleScreen() {
   const { theme } = useTheme();
   const { getToken, isSignedIn } = useAuth();
 
-  const [selectedDay, setSelectedDay] = useState(adjustedToday);
+  const daysArr = getDaysArray();
+  // Por defecto, el día seleccionado es el de hoy (índice 14)
+  const daySelectorRef = useRef<ScrollView>(null);
+  const timelineRef = useRef<ScrollView>(null);
+  const [selectedDay, setSelectedDay] = useState(TODAY_DAY_INDEX);
+  const [daySelectorWidth, setDaySelectorWidth] = useState(0);
+  const [timelineHeight, setTimelineHeight] = useState(0);
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [bloques, setBloques] = useState<ScheduleBlock[]>([]);
   const [bloquesAgente, setBloquesAgente] = useState<ScheduleAgentBlock[]>([]);
   const [eventosGoogle, setEventosGoogle] = useState<EventItem[]>([]);
+  const [fitSessions, setFitSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const HOURS = Array.from({ length: 16 }, (_, i) => i + START_HOUR);
+
+  const centerDayTab = useCallback((index: number, animated = true) => {
+    if (!daySelectorWidth) return;
+    const tabCenterX = spacing.base + index * (DAY_TAB_WIDTH + DAY_TAB_GAP) + DAY_TAB_WIDTH / 2;
+    const x = Math.max(0, tabCenterX - daySelectorWidth / 2);
+    daySelectorRef.current?.scrollTo({ x, animated });
+  }, [daySelectorWidth]);
+
+  useEffect(() => {
+    centerDayTab(TODAY_DAY_INDEX, false);
+  }, [centerDayTab]);
+
+  const handleDaySelectorLayout = (event: LayoutChangeEvent) => {
+    setDaySelectorWidth(event.nativeEvent.layout.width);
+  };
+
+  const scrollToCurrentTime = useCallback((animated = false) => {
+    if (!timelineHeight) return;
+
+    const now = new Date();
+    const minutesFromStart = now.getHours() * 60 + now.getMinutes() - START_HOUR * 60;
+    const currentY = minutesFromStart * PX_PER_MIN;
+    const contentHeight = HOURS.length * HOUR_HEIGHT;
+    const maxY = Math.max(0, contentHeight - timelineHeight);
+    const y = Math.min(Math.max(currentY - timelineHeight * 0.35, 0), maxY);
+
+    timelineRef.current?.scrollTo({ y, animated });
+  }, [HOURS.length, timelineHeight]);
+
+  useEffect(() => {
+    if (!loading && !error) {
+      scrollToCurrentTime(false);
+    }
+  }, [error, loading, scrollToCurrentTime, selectedDay]);
+
+  const handleTimelineLayout = (event: LayoutChangeEvent) => {
+    setTimelineHeight(event.nativeEvent.layout.height);
+  };
 
   const cargarDatos = useCallback(async () => {
     try {
@@ -257,18 +414,34 @@ export default function ScheduleScreen() {
 
       // Cargar eventos de Google Calendar si el usuario tiene sesión con Google
       if (isSignedIn) {
-        try {
-          const clerkToken = await getToken();
-          if (clerkToken) {
+        const clerkToken = await getToken();
+        if (clerkToken) {
+          try {
             const hoy = new Date();
             const timeMin = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 3).toISOString();
             const timeMax = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 7).toISOString();
             const eventos = await listarEventos(clerkToken, { timeMin, timeMax, maxResults: 50 });
             setEventosGoogle(eventos.items ?? []);
+          } catch {
+            // Si falla Google Calendar, no bloqueamos el resto
+            setEventosGoogle([]);
           }
-        } catch {
-          // Si falla Google Calendar, no bloqueamos el resto
-          setEventosGoogle([]);
+
+          try {
+            const fitStart = new Date(daysArr[0].date);
+            fitStart.setHours(0, 0, 0, 0);
+            const fitEnd = new Date(daysArr[daysArr.length - 1].date);
+            fitEnd.setHours(23, 59, 59, 999);
+            const fit = await obtenerFitData(clerkToken, {
+              start: fitStart.toISOString(),
+              end: fitEnd.toISOString(),
+              bucketDays: 1,
+            });
+            setFitSessions(fit.sessions ?? []);
+          } catch {
+            // Si falla Google Fit, mantenemos el horario y calendarios visibles
+            setFitSessions([]);
+          }
         }
       }
     } catch (err: any) {
@@ -286,7 +459,7 @@ export default function ScheduleScreen() {
       const token = await getAccessToken();
       if (!token) throw new Error('No hay sesión activa');
 
-      const fecha = getDateForDayIndex(selectedDay);
+      const fecha = daysArr[selectedDay].date;
       const fechaStr = fecha.toISOString().split('T')[0];
 
       const response = await generarHorario(token, fechaStr);
@@ -331,12 +504,18 @@ export default function ScheduleScreen() {
     }
   };
 
+
   // Filtrar por día seleccionado
-  const fechaDia = getDateForDayIndex(selectedDay);
+  const fechaDia = daysArr[selectedDay].date;
   const fechaDiaStr = fechaDia.toDateString();
 
   const tareasDisplay: DisplayBlock[] = tareas
-    .filter(t => t.due_at && new Date(t.due_at).toDateString() === fechaDiaStr)
+    .filter(t => {
+      const estado = t.estado ?? (t.completada ? 'completada' : 'pendiente');
+      if (estado === 'abandonada') return false;
+      const dateStr = estado === 'completada' && t.started_at ? t.started_at : t.due_at;
+      return !!dateStr && new Date(dateStr).toDateString() === fechaDiaStr;
+    })
     .map(tareaToDisplay)
     .filter((b): b is DisplayBlock => b !== null);
 
@@ -357,11 +536,17 @@ export default function ScheduleScreen() {
     .map(googleToDisplay)
     .filter((b): b is DisplayBlock => b !== null);
 
-  const todosBloques = [...tareasDisplay, ...bloquesDisplay, ...agenteDisplay, ...googleDisplay];
+  const fitDisplay: DisplayBlock[] = fitSessions
+    .map(session => fitSessionToDisplay(session, fechaDia))
+    .filter((b): b is DisplayBlock => b !== null);
+
+  const todosBloques = [...tareasDisplay, ...bloquesDisplay, ...agenteDisplay, ...googleDisplay, ...fitDisplay];
   const completados = todosBloques.filter(b => b.estado === 'completed' || b.estado === 'completada').length;
   const pendientes = todosBloques.filter(b => b.estado === 'pendiente' || b.estado === 'planned').length;
   const propuestos = agenteDisplay.length;
   const googleCount = googleDisplay.length;
+  const ejercicioCount = fitDisplay.filter(b => b.fuente === 'fitness').length;
+  const suenoCount = fitDisplay.filter(b => b.fuente === 'sleep').length;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']}>
@@ -384,20 +569,33 @@ export default function ScheduleScreen() {
       </View>
 
       {/* Day selector */}
-      <View style={styles.daySelector}>
-        {DAYS.map((d, i) => (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.daySelector}
+        contentContainerStyle={styles.daySelectorContent}
+        ref={daySelectorRef}
+        onLayout={handleDaySelectorLayout}
+      >
+        {daysArr.map((d, i) => (
           <TouchableOpacity
-            key={d}
+            key={d.date.toISOString()}
             style={[styles.dayTab, { backgroundColor: theme.surface, borderColor: theme.border }, selectedDay === i && { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '50' }]}
-            onPress={() => setSelectedDay(i)}
+            onPress={() => {
+              setSelectedDay(i);
+              centerDayTab(i);
+            }}
           >
             <Text style={[styles.dayLabel, { color: selectedDay === i ? theme.primary : theme.textSecondary }, selectedDay === i && styles.dayLabelActive]}>
-              {d}
+              {d.label}
             </Text>
-            {i === adjustedToday && <View style={[styles.todayDot, { backgroundColor: theme.primary }]} />}
+            <Text style={[styles.dayDate, { color: selectedDay === i ? theme.primary : theme.textTertiary }]}>
+              {d.dayNum}/{d.monthNum}
+            </Text>
+            {d.isToday && <View style={[styles.todayDot, { backgroundColor: theme.primary }]} />}
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
       {/* Summary strip */}
       <View style={styles.summaryStrip}>
@@ -421,6 +619,18 @@ export default function ScheduleScreen() {
             <Text style={[styles.summaryText, { color: theme.textTertiary }]}>{googleCount} Google</Text>
           </View>
         )}
+        {ejercicioCount > 0 && (
+          <View style={styles.summaryItem}>
+            <View style={[styles.summaryDot, { backgroundColor: theme.warning }]} />
+            <Text style={[styles.summaryText, { color: theme.textTertiary }]}>{ejercicioCount} ejercicio{ejercicioCount !== 1 ? 's' : ''}</Text>
+          </View>
+        )}
+        {suenoCount > 0 && (
+          <View style={styles.summaryItem}>
+            <View style={[styles.summaryDot, { backgroundColor: theme.primary }]} />
+            <Text style={[styles.summaryText, { color: theme.textTertiary }]}>{suenoCount} sueño</Text>
+          </View>
+        )}
       </View>
 
       {/* Timeline */}
@@ -434,7 +644,13 @@ export default function ScheduleScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView style={styles.timeline} showsVerticalScrollIndicator={false} contentContainerStyle={styles.timelineContent}>
+        <ScrollView
+          ref={timelineRef}
+          style={styles.timeline}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.timelineContent}
+          onLayout={handleTimelineLayout}
+        >
           {HOURS.map(h => (
             <View key={h} style={[styles.hourRow, { top: (h - START_HOUR) * HOUR_HEIGHT }]}>
               <Text style={[styles.hourLabel, { color: theme.textTertiary }]}>{h < 10 ? `0${h}` : h}:00</Text>
@@ -456,7 +672,7 @@ export default function ScheduleScreen() {
               ))
             )}
 
-            {selectedDay === adjustedToday && (
+            {daysArr[selectedDay]?.isToday && (
               <View style={[styles.nowLine, { top: (new Date().getHours() * 60 + new Date().getMinutes() - START_HOUR * 60) * PX_PER_MIN }]}>
                 <View style={[styles.nowDot, { backgroundColor: theme.error }]} />
                 <View style={[styles.nowBar, { backgroundColor: theme.error }]} />
@@ -478,13 +694,42 @@ const styles = StyleSheet.create({
   generateBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radii.full, borderWidth: 1, minWidth: 100, alignItems: 'center', justifyContent: 'center' },
   generateBtnText: { fontSize: typography.sm, fontWeight: typography.semibold, letterSpacing: 0.3 },
 
-  daySelector: { flexDirection: 'row', paddingHorizontal: spacing.base, gap: spacing.xs, marginBottom: spacing.base },
-  dayTab: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm, borderRadius: radii.md, borderWidth: 1 },
-  dayLabel: { fontSize: typography.xs, fontWeight: typography.medium },
+  daySelector: {
+    height: 48,
+    maxHeight: 48,
+    flexGrow: 0,
+    marginBottom: spacing.xs,
+  },
+  daySelectorContent: {
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.base,
+    paddingRight: spacing.base,
+  },
+  dayTab: {
+    width: DAY_TAB_WIDTH,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 1,
+    paddingHorizontal: 0,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    marginHorizontal: 0,
+    gap: 0,
+    height: 44,
+  },
+  dayLabel: { fontSize: 11, fontWeight: typography.medium, lineHeight: 13, paddingTop: 0, paddingBottom: 0 },
   dayLabelActive: { fontWeight: typography.bold },
-  todayDot: { width: 4, height: 4, borderRadius: 2, marginTop: 2 },
+  dayDate: { fontSize: 11, marginTop: 0, lineHeight: 13, paddingTop: 0, paddingBottom: 0 },
+  todayDot: { width: 4, height: 4, borderRadius: 2, marginTop: 0 },
 
-  summaryStrip: { flexDirection: 'row', gap: spacing.base, paddingHorizontal: spacing.base, marginBottom: spacing.base },
+  summaryStrip: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.base,
+    paddingHorizontal: spacing.base,
+    marginBottom: spacing.md,
+  },
   summaryItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   summaryDot: { width: 6, height: 6, borderRadius: 3 },
   summaryText: { fontSize: typography.xs },
