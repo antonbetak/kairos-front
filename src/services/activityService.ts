@@ -40,15 +40,15 @@ export interface ReactionResponse {
   created_at: string;
 }
 
+export interface UserProfile {
+  id_usuario: string;
+  nombre: string;
+  avatar_url: string | null;
+}
 
 export async function obtenerFeed(token: string, limit = 50): Promise<ActivityEvent[]> {
   return apiRequest<ActivityEvent[]>(`/activity/feed?limit=${limit}`, { token });
 }
-
-export async function obtenerMiActividad(token: string, limit = 50): Promise<ActivityEvent[]> {
-  return apiRequest<ActivityEvent[]>(`/activity/me?limit=${limit}`, { token });
-}
-
 
 export async function listarAmigos(token: string): Promise<Friendship[]> {
   return apiRequest<Friendship[]>('/activity/friends', { token });
@@ -56,40 +56,34 @@ export async function listarAmigos(token: string): Promise<Friendship[]> {
 
 export async function enviarSolicitud(token: string, addressee_id: string): Promise<Friendship> {
   return apiRequest<Friendship>('/activity/friends/request', {
-    method: 'POST',
-    token,
-    body: { addressee_id },
+    method: 'POST', token, body: { addressee_id },
   });
 }
 
 export async function aceptarSolicitud(token: string, friendship_id: string): Promise<Friendship> {
   return apiRequest<Friendship>(`/activity/friends/${friendship_id}/accept`, {
-    method: 'POST',
-    token,
+    method: 'POST', token,
   });
 }
 
-
 export async function crearInvitacion(token: string): Promise<InviteResponse> {
   return apiRequest<InviteResponse>('/activity/invites', {
-    method: 'POST',
-    token,
-    body: { max_uses: 10 },
+    method: 'POST', token, body: { max_uses: 10 },
   });
 }
 
 export async function aceptarInvitacion(token: string, code: string): Promise<Friendship> {
   return apiRequest<Friendship>(`/activity/invites/${code}/accept`, {
-    method: 'POST',
-    token,
+    method: 'POST', token,
   });
 }
 
-
 export async function reaccionarEvento(token: string, event_id: string, reaction: string): Promise<ReactionResponse> {
   return apiRequest<ReactionResponse>(`/activity/events/${event_id}/react`, {
-    method: 'POST',
-    token,
-    body: { reaction },
+    method: 'POST', token, body: { reaction },
   });
+}
+
+export async function obtenerPerfilUsuario(token: string, user_id: string): Promise<UserProfile> {
+  return apiRequest<UserProfile>(`/activity/users/${user_id}/profile`, { token });
 }
